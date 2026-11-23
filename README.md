@@ -1,3 +1,7 @@
+> **This is a fork** of [Likely7/Veyra-NRVideo](https://github.com/Likely7/Veyra-NRVideo) with an enhanced, selectable Xbox streaming transport (V2 Chromium/WebView2 + V1 native), HQ profile, D3D11VA decode option, stream HUD, and SR/optical-flow fixes.
+> Enhanced docs: [README_XBOX_ENHANCED.md](README_XBOX_ENHANCED.md) · Upstream PRs: [#289](https://github.com/Likely7/Veyra-NRVideo/pull/289), [#290](https://github.com/Likely7/Veyra-NRVideo/pull/290) · Original README preserved as [README_UPSTREAM.md](README_UPSTREAM.md).
+> Full AMD/NVIDIA portable builds: see this fork's [Releases](https://github.com/RyanLookchard/Veyra-NRVideo/releases).
+
 <div align="center">
 
 <img src="assets/veyra-wordmark-sun.gif" alt="Veyra NR · transparent animated wordmark and sun" width="480">
