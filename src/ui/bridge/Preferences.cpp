@@ -244,7 +244,7 @@ bool QmlPlayerBridge::extractIntelNrWeights(const QString& dllPath) {
                 // weights missing; re-apply so NR rebuilds now that weights exist.
                 if (self->settings().nr && self->settings().nrRuntime == engine::NrRuntime::IntelXmx) {
                     auto s = self->settings();
-                    self->impl_->facade.applySettings(s, std::nullopt);
+                    self->impl_->facade.applySettings(s, engine::runtimeOrder(self->impl_->activeRuntime()));
                 }
             } else {
                 const QString detail = QString::fromUtf8((errA.empty() ? errB : errA).c_str());
