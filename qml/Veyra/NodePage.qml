@@ -727,7 +727,7 @@ VPage {
                             Layout.fillWidth: true
                             title: qsTr("光流算法")
                             options: [Support.option(veyra,"0","NVIDIA NVOF","flow0"),Support.option(veyra,"1","AMD FidelityFX","flow1")].filter(o => !o.hidden)
-                            value: options[veyra.opticalFlowChoice]?.label ?? (veyra.opticalFlowChoice === 2 ? qsTr("GPU DIS 已移除，请重选") : qsTr("未知配置"))
+                            value: options.find(o => o.id === String(veyra.opticalFlowChoice))?.label ?? (veyra.opticalFlowChoice === 2 ? qsTr("GPU DIS 已移除，请重选") : qsTr("未知配置"))
                             onPicked: id => veyra.setOpticalFlowChoice(Number(id))
                         }
                         RowLayout {
