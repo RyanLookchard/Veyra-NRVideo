@@ -464,7 +464,9 @@ add_library(veyra_pipeline STATIC
 # The experimental Intel XMX NR worker needs the vendored protocol-3 headers
 # (third_party_local, gitignored like the other SDKs); without them the backend
 # compiles as a stub that reports the runtime unavailable.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol/nr_gpu_wire.h")
+# VEYRA_DISABLE_INTEL_NR forces the stub even when the headers exist (slim builds).
+option(VEYRA_DISABLE_INTEL_NR "Build without the experimental Intel XMX NR backend" OFF)
+if(NOT VEYRA_DISABLE_INTEL_NR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol/nr_gpu_wire.h")
   target_sources(veyra_pipeline PRIVATE src/pipeline/IntelNrBackend.cpp)
   target_compile_definitions(veyra_pipeline PRIVATE VEYRA_HAS_INTEL_NR=1)
   target_include_directories(veyra_pipeline PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol)
@@ -1489,6 +1491,9 @@ if(VEYRA_BUILD_QML_UI AND Qt6_FOUND)
   # VEYRA_DISPLAY_VERSION is the human-readable version the app reports; it is
   # the same value the resource file uses, so the UI cannot drift from it.
   target_compile_definitions(veyra_qml_bridge PRIVATE VEYRA_DISPLAY_VERSION="${VEYRA_DISPLAY_VERSION}")
+  if(VEYRA_DISABLE_INTEL_NR)
+    target_compile_definitions(veyra_qml_bridge PRIVATE VEYRA_DISABLE_INTEL_NR=1)
+  endif()
   # libass (ISC) + FreeType/FriBidi/HarfBuzz, static, for full ASS/SSA effect
   # subtitles. Local prebuilt tree only (vcpkg x64-windows-static-md); never in
   # source Git. Without it ASS tracks fall back to the built-in styled renderer.

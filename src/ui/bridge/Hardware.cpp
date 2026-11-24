@@ -98,6 +98,8 @@ static QVariantMap scanEffectCapabilities() {
     if(gpu.rx7000&&!amdNrFiles){auto cap=out.value("nr4").toMap();cap["reason"]=QObject::tr("当前包缺少 RX 7000 NR 运行组件");out["nr4"]=cap;}
     // Experimental Intel XMX DLSS-NR: the daemon subset plus extracted weights.
     // Only Intel adapters ever see it; the weights come from the user's own DLL.
+    // VEYRA_DISABLE_INTEL_NR (slim builds) hides the entry entirely.
+#ifndef VEYRA_DISABLE_INTEL_NR
     {
         const auto intelNrDirectory=(data/"intel"/"nr").lexically_normal();
         const bool intelSupported=gpu.vendor==0x8086;
@@ -106,6 +108,7 @@ static QVariantMap scanEffectCapabilities() {
         out["nr5"]=QVariantMap{{"available",intelSupported&&daemonFiles&&weights},{"supported",intelSupported},
             {"reason",!intelSupported?QObject::tr("需要 Intel Arc 显卡（XMX）"):!daemonFiles?QObject::tr("当前包缺少 Intel NR 运行组件"):!weights?QObject::tr("请先从您自己的 nvngx_dlssnr.dll 提取权重"):QString{}}};
     }
+#endif
     wchar_t systemDir[MAX_PATH]{};
     const bool hipMissing=gpu.rx7000?!pipeline::Rdna3NrBackend::hipRuntimeAvailable():
         GetSystemDirectoryW(systemDir, MAX_PATH)&&!exists(std::filesystem::path(systemDir)/"amdhip64_7.dll")&&!GetModuleHandleW(L"amdhip64_7.dll");
