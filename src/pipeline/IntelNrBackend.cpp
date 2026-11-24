@@ -55,6 +55,9 @@ struct IntelNrBackend::Impl {
     std::jthread monitor;HANDLE stop=nullptr;
     std::atomic<bool> failed=false,closing=false;
     std::atomic<uint64_t> queued=0,queuedAt=0;
+    // First frame after open pays model load + shader JIT (7-10 s at 1080p).
+    // Keep the RPC and GPU-job deadlines raised until the first frame lands.
+    std::atomic<DWORD> rpcTimeoutMs=30000;
     uint32_t w=0,h=0;
     bool opened=false,prepared=false,enqueued=false,outputs=false,bound=false;
     float intensity=1;uint64_t frameValue=0;
@@ -71,6 +74,7 @@ struct IntelNrBackend::Impl {
         nr_gpu_d3d12_packet(&session,action,value,&packet);
         if(action==NR_GPU_FRAME)nr_gpu_d3d12_tell_reset(&packet,1); // P0: reset every frame
         DWORD peer=0;
+        nr_gpu_rpc_timeout_ms=rpcTimeoutMs.load();
         if(!nr_gpu_rpc_peer(pipeName.c_str(),&packet,&reply,&peer))
             return fail(std::format("daemon pipe exchange failed win32={}",GetLastError()));
         status=reply.status;
@@ -81,10 +85,10 @@ struct IntelNrBackend::Impl {
             const auto q=queued.load();const auto at=queuedAt.load();
             const bool exited=WaitForSingleObject(process,0)!=WAIT_TIMEOUT;
             if(exited&&closing.load())break;
-            const bool expired=q&&at&&session.fence->GetCompletedValue()<q+1&&GetTickCount64()-at>15000;
+            const bool expired=q&&at&&session.fence->GetCompletedValue()<q+1&&GetTickCount64()-at>rpcTimeoutMs.load()+5000;
             if(!exited&&!expired)continue;
             failed=true;
-            log::error("intel-nr",expired?"daemon GPU job exceeded 15s; stopping only this worker":"NR daemon exited; releasing the owned queue wait for teardown");
+            log::error("intel-nr",std::format("daemon GPU job exceeded {}ms; stopping only this worker",rpcTimeoutMs.load()+5000));
             if(!exited){TerminateProcess(process,125);WaitForSingleObject(process,1000);}
             // Never leave the shared D3D12 queue waiting for a dead daemon:
             // signal the fence past the pending V+1 ourselves (we own it).
@@ -184,6 +188,9 @@ bool IntelNrBackend::open(const std::filesystem::path& directory,ID3D12Device* d
     if(!hello)return s.fail("Intel NR daemon did not accept the GPU session (weights/driver/XMX: check the daemon log)");
     s.stop=CreateEventW(nullptr,TRUE,FALSE,nullptr);if(!s.stop)return s.fail("Intel NR monitor event failed");
     s.monitor=std::jthread([&s]{s.watch();});s.opened=true;
+    // rpcTimeoutMs starts at 30000 (Impl field) so the first FRAME's model
+    // load + shader JIT fits; enqueue() drops it to 10000 after the first
+    // successful frame.
     log::info("intel-nr",std::format("daemon ready pid={} model={} internal={}x{} protocol-3 same-frame GPU interop; Veyra owns history",process.dwProcessId,smallModel?"B":"A",w,h));
     return true;
 }
@@ -237,7 +244,10 @@ bool IntelNrBackend::enqueue(){
     if(status!=NR_GPU_SUCCESS)return s.fail(std::format("Intel NR daemon refused frame status={}",status));
     s.queued=s.frameValue;s.queuedAt=GetTickCount64();
     const auto wait=s.queue->Wait(s.session.fence,s.frameValue+1);if(hrFailed(__LINE__,wait))return s.fail(std::format("Intel NR consumer wait hr=0x{:X}",unsigned(wait)));
-    s.enqueued=true;return true;
+    s.enqueued=true;
+    // First frame succeeded; subsequent frames use the normal 10 s deadline.
+    s.rpcTimeoutMs=NR_GPU_RPC_TIMEOUT_MS;
+    return true;
 }
 bool IntelNrBackend::recordOutputs(ID3D12GraphicsCommandList* list,ID3D12Resource* destination){
     auto& s=*impl_;if(!ready()||!s.enqueued||s.outputs||!list||!destination)return s.fail("Intel NR output without current-frame evaluation");
