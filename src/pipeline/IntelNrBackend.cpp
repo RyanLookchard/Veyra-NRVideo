@@ -132,8 +132,18 @@ bool IntelNrBackend::open(const std::filesystem::path& directory,ID3D12Device* d
         python.wstring(),daemon.wstring(),pipeW,directory.wstring(),smallModel?L"B":L"A",s.settingsPath.wstring());
     // The daemon reads NR_ROOT before argparse; NR_LAYER_SPAWNED ends it with
     // Veyra; the GPU transport is opt-in via NR_GPU_IMAGE/NR_GPU_TRANSPORT.
-    auto env=std::format(L"NR_GPU_IMAGE=1\0NR_GPU_TRANSPORT=1\0NR_GPU_ONLY=1\0NR_LAYER_SPAWNED={}\0NR_PRESET={}\0NR_ROOT={}\0\0",
-        GetCurrentProcessId(),smallModel?L"B":L"A",directory.wstring());
+    // Build the CREATE_UNICODE_ENVIRONMENT block by hand: a wide string literal
+    // stops at the first embedded NUL, so std::format would truncate the block
+    // to NR_GPU_IMAGE=1 and the daemon would refuse the GPU transport.
+    std::wstring env;
+    auto addEnv=[&env](const std::wstring& kv){env+=kv;env+=L'\0';};
+    addEnv(L"NR_GPU_IMAGE=1");
+    addEnv(L"NR_GPU_TRANSPORT=1");
+    addEnv(L"NR_GPU_ONLY=1");
+    addEnv(std::format(L"NR_LAYER_SPAWNED={}",GetCurrentProcessId()));
+    addEnv(std::format(L"NR_PRESET={}",smallModel?L"B":L"A"));
+    addEnv(std::format(L"NR_ROOT={}",directory.wstring()));
+    env+=L'\0'; // double-NUL terminator
     std::vector<wchar_t> envBlock(env.begin(),env.end());
     // Capture the daemon's stdout/stderr so XMX/driver failures are diagnosable
     // (the daemon prints its real error there; CREATE_NO_WINDOW discards it).
