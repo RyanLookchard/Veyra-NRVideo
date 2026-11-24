@@ -1891,7 +1891,7 @@ bool EnhanceGraph::initNgxFeatures()
                 // the bounded proxy and restores its delta over the HDR base.
                 if(desc_.hdrWorking()&&!instance->createAmdHdrProxy(context_.device()))return false;
                 auto backend=std::make_unique<IntelNrBackend>();
-                const auto directory=std::filesystem::path(desc_.runtimeAbsPath)/L".."/L"intel"/L"nr";
+                const auto directory=runtime::localDataDirectory()/L"intel"/L"nr";
                 if(!backend->open(directory.lexically_normal(),context_.device(),ring_.queue(),extent.width,extent.height,instance->model.performance))return false;
                 instance->intel=std::move(backend);
                 if(!instance->intel->admits(extent.width,extent.height))return false;
