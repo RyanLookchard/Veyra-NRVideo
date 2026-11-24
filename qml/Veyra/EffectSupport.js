@@ -13,9 +13,12 @@ function status(api, id) {
 }
 function available(api, id) { return status(api, id).available }
 function reason(api, id) { return status(api, id).reason }
+// Hardware gate alone: false means this GPU can never run the effect, so the
+// UI hides it instead of greying. Missing flag (test mocks) reads as supported.
+function supported(api, id) { var s = status(api, id).supported; return s === undefined ? true : s }
 function option(api, id, label, key) {
     var cap = (api.effectCapabilities || {})[key] || {available: true, reason: ""}
-    return {id: id, label: label, disabled: !cap.available, note: cap.reason}
+    return {id: id, label: label, disabled: !cap.available, hidden: cap.supported === false, note: cap.reason}
 }
 
 function fgBackendShortLabel(option) {

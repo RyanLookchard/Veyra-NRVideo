@@ -110,6 +110,7 @@ ColumnLayout {
         }
     }
     VRow {
+        visible: (veyra.nrRuntimeChoices || []).length > 0
         label: qsTr("NR 版本")
         hint: qsTr("全链共享 · 切换会重建 NR 管线")
         VSelect {

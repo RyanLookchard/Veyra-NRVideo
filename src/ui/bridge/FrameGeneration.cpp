@@ -27,14 +27,18 @@ QVariantList QmlPlayerBridge::fgBackendChoices() const {
         QVariantMap{{"id","vfg"},{"label",tr("NVIDIA VFG 👑（顶级补帧质量） · RTX 30（实验）/ 40 / 50")},{"gold",true}}
     };
     const auto caps = effectCapabilities();
+    QVariantList offered;
     for (auto& choice : choices) {
         auto row = choice.toMap();
         const auto cap = caps.value(row.value("id").toString()).toMap();
+        // Hide backends this GPU can never run; a supported-but-missing runtime
+        // stays listed (disabled) so the component page can explain it.
+        if (!cap.value("supported").toBool()) continue;
         row["disabled"] = !cap.value("available").toBool();
         row["note"] = cap.value("reason");
-        choice = row;
+        offered << row;
     }
-    return choices;
+    return offered;
 }
 QString QmlPlayerBridge::fgProviderText() const {
     if(fgBackendName()==QLatin1String("anr"))return tr("Apex Neural Rendering · 2X～6X · 视频估算输入，效果与速度以实际运行结果为准");

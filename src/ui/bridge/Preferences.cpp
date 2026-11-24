@@ -82,14 +82,20 @@ QVariantList QmlPlayerBridge::readComponentList() const {
     const auto anrDirectory=ngx::AnrProvider::directory(runtime::localRuntimeDirectory().wstring());
     out<<QVariantMap{{"name",QStringLiteral("ANR FG")},{"detail",QString::fromStdWString(anrDirectory)},
         {"loaded",ngx::AnrProvider::available(runtime::localRuntimeDirectory().wstring())},{"experimental",true}};
-    // AMD FRC: the AMF runtime of the AMD driver, never shipped with Veyra.
-    wchar_t systemDirectory[MAX_PATH]{};GetSystemDirectoryW(systemDirectory,MAX_PATH);
-    out<<QVariantMap{{"name",QStringLiteral("AMD FRC (AMF)")},{"detail",QString::fromWCharArray(systemDirectory)+QStringLiteral("\\amfrt64.dll")},
-        {"loaded",gfx::AmfFrcBackend::runtimeInstalled()}};
-    const auto vfgDirectory=pipeline::VfgBackend::runtimeDirectory(runtime::localRuntimeDirectory().wstring());
-    const bool vfgAvailable=pipeline::VfgBackend::runtimeAvailable(runtime::localRuntimeDirectory().wstring());
-    out<<QVariantMap{{"name",QStringLiteral("NVIDIA VFG")},{"detail",QString::fromStdWString(vfgDirectory)},
-        {"loaded",vfgAvailable},{"experimental",true}};
+    // AMD FRC: the AMF runtime of the AMD driver, never shipped with Veyra;
+    // only AMD adapters ever see the entry.
+    if (ui::hardwareSupports(ui::HardwareEffect::AmdFrc, effectGpu())) {
+        wchar_t systemDirectory[MAX_PATH]{};GetSystemDirectoryW(systemDirectory,MAX_PATH);
+        out<<QVariantMap{{"name",QStringLiteral("AMD FRC (AMF)")},{"detail",QString::fromWCharArray(systemDirectory)+QStringLiteral("\\amfrt64.dll")},
+            {"loaded",gfx::AmfFrcBackend::runtimeInstalled()}};
+    }
+    // NVIDIA VFG only exists on RTX 30/40/50; other adapters never see the entry.
+    if (ui::hardwareSupports(ui::HardwareEffect::Vfg, effectGpu())) {
+        const auto vfgDirectory=pipeline::VfgBackend::runtimeDirectory(runtime::localRuntimeDirectory().wstring());
+        const bool vfgAvailable=pipeline::VfgBackend::runtimeAvailable(runtime::localRuntimeDirectory().wstring());
+        out<<QVariantMap{{"name",QStringLiteral("NVIDIA VFG")},{"detail",QString::fromStdWString(vfgDirectory)},
+            {"loaded",vfgAvailable},{"experimental",true}};
+    }
     const auto manifest = runtime::localRuntimeDirectory() / L"release-runtime-manifest.json";
     QFile file(QString::fromWCharArray(manifest.c_str()));
     if (!file.open(QIODevice::ReadOnly)) {

@@ -202,8 +202,10 @@ QVariantList QmlPlayerBridge::effectCatalog() const {
         auto cap = effectAvailability(utf8Of(info.id));
         if(info.type==engine::EffectType::FrameGeneration)
             for(const auto& choice:fgBackendChoices())if(!choice.toMap().value("disabled").toBool()){
-                cap=QVariantMap{{"available",true},{"reason",QString{}}};break;
+                cap=QVariantMap{{"available",true},{"supported",true},{"reason",QString{}}};break;
             }
+        // A stage this GPU can never run is hidden from the add menu, not greyed.
+        if(!cap.value("supported").toBool())continue;
         item["disabled"] = !cap.value("available").toBool();
         item["note"] = cap.value("reason");
         out << item;

@@ -717,6 +717,7 @@ VPage {
                             }
                         }
                         VRow {
+                            visible: veyra.nvidiaLowLatencyAvailable
                             label: qsTr("二次编码")
                             hint: qsTr("编码器先快速分析一遍画面再分配码率，同样码率下快速运动和复杂画面更清晰；仅 NVIDIA（NVENC），四分之一分辨率首遍更轻，完整分辨率最好但更重 · 默认关闭")
                             VSeg {
@@ -727,6 +728,7 @@ VPage {
                             }
                         }
                         VRow {
+                            visible: veyra.nvidiaLowLatencyAvailable
                             label: qsTr("心理视觉调优")
                             hint: qsTr("自适应量化：把码率挪到眼睛更敏感的地方（平坦天空、暗部、静止细节），减少色块；仅 NVIDIA（NVENC），显卡支持时再加时间自适应量化 · 默认关闭")
                             VSwitch {
@@ -880,6 +882,7 @@ VPage {
                     }
                     VGroup {
                         objectName: "set-smooth-motion"
+                        visible: veyra.nvidiaLowLatencyAvailable
                         VRow {
                             label: qsTr("Smooth Motion 开启方法")
                             hint: qsTr("NVIDIA 驱动级 AI 插帧，与软件内补帧二选一")
@@ -1085,6 +1088,7 @@ VPage {
                             }
                         }
                         VRow {
+                            visible: veyra.nvidiaLowLatencyAvailable
                             label: qsTr("HDR 补帧闪黑兼容")
                             hint: qsTr("默认关闭。仅 NVIDIA HDR10 补帧时生效；4K 额外约 32 MiB 显存，可能增加 GPU 开销。切换时画面可能短暂停顿。")
                             VSwitch {

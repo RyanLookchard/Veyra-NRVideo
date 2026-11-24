@@ -770,7 +770,9 @@ bool EnhanceGraph::initialize(const EnhanceGraphDesc& desc)
     const bool videoRestore=!desc.stillImage&&desc.videoSrQuality>=1&&desc.videoSrQuality<=4;
     srEnabled_ = desc.enableSr && (srcW_ != workW_ || srcH_ != workH_ || videoRestore || srPrescaleActive() || srResolveActive());
     lmxxfNr_ = context_.adapter().vendorId == 0x1002 || desc.nrRuntime == engine::NrRuntime::LmxxfAmd;
-    if(context_.adapter().vendorId==0x1002 && desc_.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia)
+    // NVOF only exists on NVIDIA adapters; every other vendor (AMD, Intel)
+    // resolves a requested NVOF backend to the cross-vendor FidelityFX flow.
+    if(context_.adapter().vendorId!=0x10DE && desc_.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia)
         desc_.opticalFlowBackend=engine::OpticalFlowBackend::AmdFidelityFx;
     nrEnabled_ = desc.enableNr && !desc.noFeatures && (!desc.noNgx || lmxxfNr_);
     fgEnabled_ = desc.enableFg && !desc.noFeatures && !desc.stillImage &&
@@ -993,8 +995,12 @@ bool EnhanceGraph::createResources()
             if(!firstSrInput_||!firstSrOutput_)return false;
         }
         if(desc_.firstSrRuns(0)&&!(firstSrFlow_=makeTexture(context_.device(),desc_.firstSrWidth,desc_.firstSrHeight,DXGI_FORMAT_R16G16_FLOAT,true)))return false;
-        if(desc_.dualSrQuality==engine::kVideoSrFsr&&!(secondSrFlow_=makeTexture(context_.device(),srInW_,srInH_,DXGI_FORMAT_R16G16_FLOAT,true)))return false;
+        if(temporalSrQuality(desc_.dualSrQuality)&&desc_.dualSrQuality!=0&&!(secondSrFlow_=makeTexture(context_.device(),srInW_,srInH_,DXGI_FORMAT_R16G16_FLOAT,true)))return false;
     }
+    // Single-pass temporal SR (FSR/XeSS) consumes motion in its INPUT (render)
+    // extent pixels; flowTex_ is source-extent, so adapt whenever they differ.
+    if(srEnabled_&&!desc_.dualSr&&temporalSrQuality(desc_.videoSrQuality)&&(srcW_!=nvofW_||srcH_!=nvofH_)&&
+       !(secondSrFlow_=makeTexture(context_.device(),srcW_,srcH_,DXGI_FORMAT_R16G16_FLOAT,true)))return false;
     // FSR upscaling needs a render-extent depth; Veyra has no source-resolution
     // depth source, so this is the same explicit constant far depth the
     // frame-generation path uses. It limits disocclusion quality and must not
@@ -3625,9 +3631,10 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         };
         adapt(nrFlow_.Get(),nrW_,nrH_,1);adapt(baseFlow_.Get(),workW_,workH_,2);
         // Double SR temporal passes: a first DLSS SR pass in first-result pixels,
-        // a second FSR pass in SR-input (render) pixels.
+        // a second temporal pass in SR-input (render) pixels. Single-pass FSR/XeSS
+        // reuses secondSrFlow_ at the render extent when it differs from the flow.
         if(firstSrFlow_)adapt(firstSrFlow_.Get(),desc_.firstSrWidth,desc_.firstSrHeight,firstSrFlowSet());
-        if(secondSrFlow_)adapt(secondSrFlow_.Get(),srInW_,srInH_,secondSrFlowSet());
+        if(secondSrFlow_)adapt(secondSrFlow_.Get(),desc_.dualSr?srInW_:srcW_,desc_.dualSr?srInH_:srcH_,secondSrFlowSet());
         for(UINT i=0;i<dlaa_.size();++i){
             const auto& d=dlaa_[i];
             if(d.adaptedMotion&&!d.copy)adapt(d.adaptedMotion.Get(),d.width,d.height,dlaaFlowSet(i));
@@ -3710,6 +3717,17 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
             finishTemporalOutput(list,restore,output);
             return true;
         };
+        auto xess=[&](gfx::XessSrBackend& backend,ID3D12Resource* color,ID3D12Resource* motion,ID3D12Resource* output,uint32_t inW,uint32_t inH,uint32_t outW,uint32_t outH)->bool{
+            const bool first=output==firstSrLinear_.Get();
+            auto& restore=first?firstSrHdrRestore_:srHdrRestore_;
+            auto* target=restore.raw?restore.raw.Get():output;
+            readable({color,motion,fsrSrDepth_.Get()});tracker_.transition(list,target,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            if(!backend.evaluate(list,color,motion,fsrSrDepth_.Get(),target,inW,inH,outW,outH,fsrReset,float(deltaMs))){
+                failedBackend_=engine::FailedBackend::Sr;veyra::log::error("dual-sr","XeSS evaluate failed");return false;
+            }
+            finishTemporalOutput(list,restore,output);
+            return true;
+        };
         auto* zero=fsrSrZeroMotion_.Get();
         // 1. Source -> linear first result.
         if(engine::rtxVideoSr(desc_.videoSrQuality)){if(!firstVideoSr())return false;}
@@ -3725,6 +3743,8 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
                 if(!dlss(*firstDlssSrBackend_,input,validMotion?firstSrFlow_.Get():zero,firstSrLinear_.Get()))return false;
             }else if(firstFsrSrBackend_&&firstFsrSrBackend_->created()){
                 if(!fsr(*firstFsrSrBackend_,input,validMotion?flowTex_.Get():zero,firstSrLinear_.Get(),srcW_,srcH_,desc_.firstSrWidth,desc_.firstSrHeight))return false;
+            }else if(firstXessSrBackend_&&firstXessSrBackend_->created()){
+                if(!xess(*firstXessSrBackend_,input,validMotion?flowTex_.Get():zero,firstSrLinear_.Get(),srcW_,srcH_,desc_.firstSrWidth,desc_.firstSrHeight))return false;
             }else{failedBackend_=engine::FailedBackend::Sr;veyra::log::error("dual-sr","first SR pass has no backend");return false;}
             ++metrics_.srEvaluateCount;
         }
@@ -3737,6 +3757,8 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
                 if(!dlss(*srBackend_,srPrescaled_.Get(),validMotion?baseFlow_.Get():zero,workRgba_.Get()))return false;
             }else if(desc_.dualSrQuality==engine::kVideoSrFsr&&fsrSrBackend_&&fsrSrBackend_->created()){
                 if(!fsr(*fsrSrBackend_,srPrescaled_.Get(),validMotion?secondSrFlow_.Get():zero,workRgba_.Get(),srInW_,srInH_,workW_,workH_))return false;
+            }else if(desc_.dualSrQuality==engine::kVideoSrXess&&xessSrBackend_&&xessSrBackend_->created()){
+                if(!xess(*xessSrBackend_,srPrescaled_.Get(),validMotion?secondSrFlow_.Get():zero,workRgba_.Get(),srInW_,srInH_,workW_,workH_))return false;
             }else{failedBackend_=engine::FailedBackend::Sr;veyra::log::error("dual-sr","second SR pass has no backend");return false;}
             ++metrics_.srEvaluateCount;
         }
@@ -3749,6 +3771,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         if(first&&!desc_.firstSrEnlarges()&&!engine::ngxVideoSr(quality))return true;
         if(quality==0)return first?(firstDlssSrBackend_&&firstDlssSrBackend_->created()):(srBackend_&&srBackend_->created());
         if(quality==engine::kVideoSrFsr)return first?(firstFsrSrBackend_&&firstFsrSrBackend_->created()):(fsrSrBackend_&&fsrSrBackend_->created());
+        if(quality==engine::kVideoSrXess)return first?(firstXessSrBackend_&&firstXessSrBackend_->created()):(xessSrBackend_&&xessSrBackend_->created());
         if(engine::vfxVideoSr(quality))return first?firstVfxSrBackend_!=nullptr:vfxSrBackend_!=nullptr;
         return first?(firstVideoSrBackend_||videoSrBackend_):videoSrBackend_!=nullptr;
     };
@@ -3772,7 +3795,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         auto* srInput=srStageInput();
         tracker_.transition(list,srInput,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         const bool validMotion=desc_.srUsesFlow()&&haveFlow;
-        auto* srMotion=validMotion?flowTex_.Get():fsrSrZeroMotion_.Get();
+        auto* srMotion=validMotion?(secondSrFlow_?secondSrFlow_.Get():flowTex_.Get()):fsrSrZeroMotion_.Get();
         tracker_.transition(list,srMotion,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         tracker_.transition(list,fsrSrDepth_.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         auto* fsrTarget=srHdrRestore_.raw?srHdrRestore_.raw.Get():workRgba_.Get();
@@ -3793,7 +3816,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         auto* srInput=srStageInput();
         tracker_.transition(list,srInput,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         const bool validMotion=desc_.srUsesFlow()&&haveFlow;
-        auto* srMotion=validMotion?flowTex_.Get():fsrSrZeroMotion_.Get();
+        auto* srMotion=validMotion?(secondSrFlow_?secondSrFlow_.Get():flowTex_.Get()):fsrSrZeroMotion_.Get();
         tracker_.transition(list,srMotion,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         tracker_.transition(list,fsrSrDepth_.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         auto* xTarget=srHdrRestore_.raw?srHdrRestore_.raw.Get():workRgba_.Get();
@@ -4567,7 +4590,7 @@ bool EnhanceGraph::applySettings(const engine::EnhancementSettings& s){
     // but has this NGX-only stage explicitly disabled in the graph. Do not
     // reject unrelated live settings in that degraded, playable state.
     if(s.nr&&desc_.enableNr&&!nrCreated())return false;
-    const auto requestedFlow=context_.adapter().vendorId==0x1002&&s.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia
+    const auto requestedFlow=context_.adapter().vendorId!=0x10DE&&s.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia
         ?engine::OpticalFlowBackend::AmdFidelityFx:s.opticalFlowBackend;
     const bool usesSharedFlow=dlaaRequested()||nvofStandalone_||(desc_.enableFg&&desc_.fgUsesFlow())||
         (srEnabled_&&desc_.srUsesFlow()&&temporalSrPass(desc_));

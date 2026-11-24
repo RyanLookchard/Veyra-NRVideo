@@ -1496,6 +1496,8 @@ VPage {
                         VAccordion {
                             id: hdrCard
                             objectName: "list-video-hdr"
+                            // RTX Video HDR is NVIDIA-only; other adapters never see it.
+                            visible: Support.supported(veyra, "video-hdr")
                             Layout.fillWidth: true
                             glyph: "sun"
                             hue: "#E58BD9"
@@ -1543,6 +1545,8 @@ VPage {
                         VAccordion {
                             id: nrStage
                             objectName: "list-nr-stage"
+                            // No NR runtime this GPU can run: hide the whole stage.
+                            visible: Support.supported(veyra, "nr")
                             Layout.fillWidth: true
                             glyph: "wand"
                             hue: Theme.accent
@@ -1961,7 +1965,7 @@ VPage {
                                     hint: qsTr("补帧与 NR 共用 · 输入后计算一次")
                                     VSelect {
                                         objectName: "list-flow-choice"
-                                        options: [Support.option(veyra,"0","NVIDIA NVOF","flow0"),Support.option(veyra,"1","AMD FidelityFX","flow1")]
+                                        options: [Support.option(veyra,"0","NVIDIA NVOF","flow0"),Support.option(veyra,"1","AMD FidelityFX","flow1")].filter(o => !o.hidden)
                                         value: options[veyra.opticalFlowChoice]?.label ?? (veyra.opticalFlowChoice === 2 ? qsTr("GPU DIS 已移除，请重选") : qsTr("未知配置"))
                                         onPicked: id => veyra.setOpticalFlowChoice(Number(id))
                                     }

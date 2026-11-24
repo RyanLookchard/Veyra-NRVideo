@@ -115,12 +115,19 @@ int main(){
         // FSR is the AMD default SR backend. Normalization keeps an enabled FSR
         // SR and must never switch a disabled one on (2.1.0: SR could not be
         // turned off on AMD because every graph build re-enabled it).
+        // Every non-NVIDIA vendor now resolves NVOF to FidelityFX flow, so a
+        // fresh default settings record (NVOF) always normalizes once.
         s=engine::EnhancementSettings{};s.videoSrQuality=engine::kVideoSrFsr;s.sr=false;
-        check(!engine::disableUnsupportedNvidiaEffects(s,false,true)&&!s.sr,"AMD normalization leaves disabled FSR SR off");
-        s.sr=true;
-        check(!engine::disableUnsupportedNvidiaEffects(s,false,true)&&s.sr,"AMD normalization keeps enabled FSR SR");
+        check(engine::disableUnsupportedNvidiaEffects(s,false,true)&&!s.sr&&
+              s.opticalFlowBackend==engine::OpticalFlowBackend::AmdFidelityFx,"AMD normalization leaves disabled FSR SR off and moves NVOF to AMD flow");
+        s=engine::EnhancementSettings{};s.videoSrQuality=engine::kVideoSrFsr;s.sr=true;
+        check(engine::disableUnsupportedNvidiaEffects(s,false,true)&&s.sr,"AMD normalization keeps enabled FSR SR");
         s.videoSrQuality=0;
         check(engine::disableUnsupportedNvidiaEffects(s,false,true)&&!s.sr,"AMD normalization removes DLSS SR");
+        // Intel (non-AMD NR) also loses NR but keeps XeSS SR and gains AMD flow.
+        s=engine::EnhancementSettings{};s.nr=true;s.sr=true;s.videoSrQuality=engine::kVideoSrXess;s.multiplier=2;
+        check(engine::disableUnsupportedNvidiaEffects(s,false,false)&&!s.nr&&s.sr&&s.multiplier==2&&
+              s.opticalFlowBackend==engine::OpticalFlowBackend::AmdFidelityFx,"Intel normalization drops NR, keeps XeSS SR and uses AMD flow");
         s=engine::EnhancementSettings{};s.sr=true;s.videoSrQuality=engine::kVideoSrFsr;s.multiplier=2;s.frameGenerationBackend=engine::FrameGenerationBackend::Fsr;
         check(!engine::nvidiaOnlyStagesRequested(false,s.sr,true,s,true),"FSR SR and FSR frame generation are not NVIDIA-only stages");
         s.videoSrQuality=2;

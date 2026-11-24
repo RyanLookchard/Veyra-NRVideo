@@ -81,11 +81,14 @@ static QVariantMap scanEffectCapabilities() {
     QVariantMap out;
     auto add = [&](const QString& id, H hardware, bool files, const QString& requirement) {
         const bool supported = ui::hardwareSupports(hardware, gpu);
-        out[id] = QVariantMap{{"available", supported && files}, {"reason", !supported ? requirement : !files ? QObject::tr("当前包缺少此功能的运行组件") : QString{}}};
+        // "supported" is the hardware gate alone: choices/catalogs hide entries
+        // this GPU can never run, while "available" still needs the runtime files.
+        out[id] = QVariantMap{{"available", supported && files}, {"supported", supported}, {"reason", !supported ? requirement : !files ? QObject::tr("当前包缺少此功能的运行组件") : QString{}}};
     };
     add("nr2", H::NvidiaNrSf, exists(nr / "nr-ampere/nvngx_dlssnr.dll"), QObject::tr("需要 NVIDIA RTX 显卡"));
     out["nr0"]=out["nr2"]; // Retired preset ID; no retired runtime is loaded.
     out["nrAuto"]=QVariantMap{{"available",gpu.vendor==0x10DE&&gpu.deviceId==0x2f04&&out.value("nr0").toMap().value("available").toBool()},
+        {"supported",gpu.vendor==0x10DE&&gpu.deviceId==0x2f04},
         {"reason",gpu.deviceId!=0x2f04?QObject::tr("自动 NR 当前仅验证 RTX 5070"):!out.value("nr0").toMap().value("available").toBool()?QObject::tr("当前包缺少此功能的运行组件"):QString{}}};
     add("nr3", H::NvidiaNr50, exists(nr / "nr-original/nvngx_dlssnr.dll"), QObject::tr("需要 NVIDIA RTX 50 / Blackwell"));
     const auto rdna3Directory=(nr/"../amd-nr-rdna3").lexically_normal();
@@ -240,13 +243,14 @@ QVariantMap QmlPlayerBridge::effectAvailability(const QString& id) const {
         id == "dlss-fg" ? QString("dlss") : id == "xess-fg" ? QString("xess") :
         id == "fsr3-fg" ? QString("fsr3") : id == "fsr4-fg" ? QString("fsr4") : id == "vfg-fg" ? QString("vfg") : id == "anr-fg" ? QString("anr") : id == "amdfrc-fg" ? QString("amdfrc") : id;
     const auto caps = effectCapabilities();
-    return caps.contains(key) ? caps.value(key).toMap() : QVariantMap{{"available", true}, {"reason", QString{}}};
+    return caps.contains(key) ? caps.value(key).toMap() : QVariantMap{{"available", true}, {"supported", true}, {"reason", QString{}}};
 }
 QVariantList QmlPlayerBridge::nrRuntimeChoices() const {
     QVariantList choices;
     const auto caps = effectCapabilities();
     for (const auto& entry : std::initializer_list<std::pair<int, QString>>{{2, "RTX 20–50 · SF 310.9.16"}, {3, tr("RTX 50 · NVIDIA 原版")}, {4, effectGpu().rx7000?tr("RX 7000 · RedDuke（实验）"):tr("RX 9000 · lmxxf（实验）")}}) {
         const auto cap = caps.value("nr" + QString::number(entry.first)).toMap();
+        if (!cap.value("supported").toBool()) continue;
         choices << QVariantMap{{"id", QString::number(entry.first)}, {"label", entry.second}, {"disabled", !cap.value("available").toBool()}, {"note", cap.value("reason")}};
     }
     return choices;
@@ -262,6 +266,7 @@ QVariantList QmlPlayerBridge::srBackendChoices() const {
             {"5", 5, effectGpu().vendor == 0x1002 ? tr("FSR 3.1 / 4 · 自动兼容") : QString("FSR 3.1")},
             {"6", 6, tr("XeSS 超分 · Intel XMX / 跨厂商")}}) {
         const auto cap = caps.value("sr" + QString::number(entry.capability)).toMap();
+        if (!cap.value("supported").toBool()) continue;
         choices << QVariantMap{{"id", entry.id}, {"label", entry.label}, {"disabled", !cap.value("available").toBool()}, {"note", cap.value("reason")}};
     }
     return choices;

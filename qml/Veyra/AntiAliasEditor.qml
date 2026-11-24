@@ -17,6 +17,7 @@ ColumnLayout {
     // DLAA runs where DLSS SR does (same runtime and adapters).
     readonly property var dlssCapability: (veyra.effectCapabilities || {}).sr0 || {}
     readonly property bool dlaaAvailable: dlssCapability.available === true
+    readonly property bool dlaaSupported: dlssCapability.supported !== false
     readonly property var qualityChoices: method === 0
         ? [{id: "0", label: qsTr("中")}, {id: "1", label: qsTr("高")}, {id: "2", label: qsTr("极高")}]
         : [{id: "0", label: qsTr("低")}, {id: "1", label: qsTr("中")}, {id: "2", label: qsTr("高")}, {id: "3", label: qsTr("极高")}]
@@ -35,7 +36,7 @@ ColumnLayout {
         VSeg {
             objectName: editor.namePrefix + "-method"
             options: [{id: "0", label: "FXAA"}, {id: "1", label: "SMAA"}, {id: "2", label: "MLAA"},
-                      {id: "3", label: "DLAA", disabled: !editor.dlaaAvailable}]
+                      {id: "3", label: "DLAA", disabled: !editor.dlaaAvailable, hidden: !editor.dlaaSupported}].filter(o => !o.hidden)
             current: String(editor.method)
             onPicked: id => editor.edited("method", Number(id))
         }
