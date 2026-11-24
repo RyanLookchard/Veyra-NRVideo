@@ -1556,7 +1556,7 @@ VPage {
                             summary: veyra.nrLayers.length > 0 ? veyra.nrLayers.length + qsTr(" 层依次处理 · 每层参数独立") : qsTr("未添加 NR 层")
                             // Master switch (field request 2026-10-02): every layer off
                             // at once; on again brings back the layers that were on.
-                            enabledSwitch: veyra.nrLayers.length > 0
+                            enabledSwitch: true
                             switchAvailable: Support.available(veyra, "nr")
                             switchObjectName: "list-nr-master"
                             on: veyra.nrAnyEnabled
