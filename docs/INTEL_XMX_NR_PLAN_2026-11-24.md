@@ -64,18 +64,20 @@ env: NR_GPU_IMAGE=1 NR_GPU_TRANSPORT=1 NR_GPU_ONLY=1
 
 管线顺序（既有）：`NR(source) → SR → [NR(work)] → FG`，低延迟模式 `NR → residual → SR → FG`。Intel NR 走与 AMD NR 相同的 `layer->amd` 式槽位，顺序不变。
 
-| 交互 | 结论 | 依据/措施 |
+以下为**待验证假设与对策**，非已确立的兼容性结论；P0 契约测试逐条验证后才算数。
+
+| 交互 | 假设/风险 | 依据/措施 |
 |---|---|---|
 | NR→XeSS SR 时序 | **兼容，且必须喂 NR 后的帧** | XeSS SR 吃 `srStageInput()`（NR 先行输出），历史建立在 NR 结果上；NR 无答案保留源图时 SR 历史仍连续（reset 语义同 AMD NR） |
 | NR→XeSS FG | **兼容** | FG 在 present sink 读最终合成帧；NR 残差经 Veyra 既有 residual/protection/temporal 合成后才到 FG，FG 的 MV（flowTex_/精修）不受 NR 影响 |
-| 双时序历史叠加 | **风险：NR 自身时序 gate + XeSS SR 历史 + FG 插值三层** | NR 的 history 是它自己的预测重投影（daemon 内），与 XeSS SR 历史独立；NR 拖影会被 SR 历史放大。默认 `--temporal 0.5` 起步，UI 给"NR 时序信任"滑条；A/B 对照单开/双开 |
-| 光流竞争 | **无冲突** | NR daemon 自带 motion 输入（Veyra flowTex_ 喂 protocol-3 motion 区），不另起光流会话；XeSS SR/FG 共用既有 FidelityFX 光流，一次计算 |
+| 双时序历史叠加 | **风险：NR 自身时序 gate + XeSS SR 历史 + FG 插值三层** | NR 的 history 是它自己的预测重投影（daemon 内），与 XeSS SR 历史独立；NR 拖影可能被 SR 历史放大。**P0 初始契约取保守路线：零 motion + 每帧 reset（同 RDNA3 现行做法），NR 时序 gate 关闭**；flowTex_ motion 喂入与 `--temporal` 信任滑条是 P1 的实测项，不预设 0.5 默认值 |
+| 光流竞争 | **假设：无冲突（待验证）** | P0 零 motion 契约下 daemon 不做重投影，无光流需求；P1 若启用 motion，由 Veyra flowTex_ 喂 protocol-3 motion 区，不另起光流会话。XeSS SR/FG 共用既有 FidelityFX 光流 |
 | 显存 | **风险：daemon 独立 Vulkan 上下文，权重+历史驻留** | 网络 B FP16 权重 ~227MB + 历史/中间缓冲；Veyra 主图 admission 只算自己的纹理（sdkReserve 不含 daemon）。措施：nr5 开启时 admission 加固定 daemon 预留（按 probe 实测，先按 512MiB），不足拒绝开启而非挤掉 SR/FG |
-| GPU 时间片 | **风险：NR 与 SR/FG 同 GPU 串行** | protocol-3 是队列级 wait（V→V+1），NR 期间主图队列阻塞——与 RDNA3 同模式，非并行。720p@0.5 网络B ≈9ms 可接受；1080p 全尺寸会挤掉 FG deadline → admission 拒绝。NR 耗时计入 fgBudget 的 elapsed |
+| GPU 时间片 | **风险：NR 与 SR/FG 同 GPU 串行** | protocol-3 是队列级 wait（V→V+1），NR 期间主图队列阻塞——与 RDNA3 同模式，非并行。注意：B580 720p@0.4 ≈9ms 是**网络 A** 的实测（上游 SETTINGS.md），网络 B 无 B580 实测行，预算须 probe 实测后定；1080p 全尺寸网络 A ≈88ms 会挤掉 FG deadline → admission 拒绝。NR 耗时计入 fgBudget 的 elapsed |
 | 补帧 admission | **兼容** | FG 按 deadline 准入，NR 耗时自然进入 elapsed/predicted；NR 慢时 FG 自动降对（既有逻辑），不会死锁 |
 | HDR | **兼容，复用 AMD 代理** | 网络吃 display-referred sRGB；HDR 走 `createAmdHdrProxy` 同款软膝代理 + delta 还原（上游 nr_display.py 同思路），XeSS SR HDR 路径不受影响 |
 | reset/scene cut | **兼容** | Veyra reset → protocol-3 `driver_uuid[8]=3`（告知历史重置），daemon 丢历史；与 XeSS SR resetHistory、FG resetFg 同帧传播 |
-| 进程崩溃 | **隔离** | daemon 独立进程，崩溃只影响 NR 层（看门狗终止本层，保留源图），不拖累 SR/FG/主程序；fence UINT64_MAX 坑用 renew_fence |
+| 进程崩溃 | **风险：仅进程隔离不够** | daemon 死后主图队列可能永久卡在 wait V+1。看门狗必须**显式 signal 共享 fence V+1**（客户端自己持有 fence，可本地 signal）解除队列等待，再终止本层、保留源图；fence UINT64_MAX 坑用 renew_fence。此项为 P0 必测 |
 | 设置重建 | **兼容** | NR 开关/参数走既有 revision 重建；daemon knobs 热重载不触发图重建（强度/render-scale），A/B 网络切换重建 worker（同 RDNA3 切模型） |
 
 **开工前置测试**（P0 契约里加）：
@@ -83,7 +85,8 @@ env: NR_GPU_IMAGE=1 NR_GPU_TRANSPORT=1 NR_GPU_ONLY=1
 2. NR+FG 双开：NR 耗时注入 → FG admission 正常降对，不死锁。
 3. NR+SR+FG 三开：显存预留生效，admission 不足时拒绝 NR 而非挤掉 SR/FG。
 4. reset 传播：scene cut 同帧到达 daemon/SR/FG 三者。
-5. daemon 崩溃：NR 层保留源图，SR/FG 继续。
+5. daemon 崩溃/挂死：看门狗 signal V+1 解除队列等待，NR 层保留源图，SR/FG 继续（队列不卡死）。
+6. 网络 B 预算：probe 实测 B580/A770 网络 B 帧时后才定 render-scale 默认与 admission 预算（不得引用网络 A 数字）。
 
 ## 分期
 
