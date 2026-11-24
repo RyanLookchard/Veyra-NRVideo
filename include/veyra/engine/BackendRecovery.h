@@ -18,8 +18,9 @@ constexpr const wchar_t* ngxFailureHint(uint64_t result) {
 // intelNr: the adapter is Intel; NR survives only on the experimental XMX
 // runtime (the daemon worker), every other NR runtime is NGX-only.
 inline bool disableUnsupportedNvidiaEffects(EnhancementSettings& settings,bool nvidia,bool amdNr=false,bool intelNr=false){
-    if(nvidia)return false;
     const auto before=settings;
+    settings.sr=settings.sr&&videoSrRunsOn(settings.videoSrQuality,nvidia,amdNr);
+    if(nvidia)return settings.sr!=before.sr;
     if(!amdNr&&!(intelNr&&settings.nrRuntime==NrRuntime::IntelXmx))settings.nr=false;
     // NVOF does not exist on these adapters; every non-NVIDIA vendor (AMD NR
     // motion, Intel SR/FG guidance) uses the cross-vendor FidelityFX flow.
