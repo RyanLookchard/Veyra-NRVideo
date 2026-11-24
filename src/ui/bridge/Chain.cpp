@@ -777,7 +777,21 @@ bool QmlPlayerBridge::setAllNrEnabled(bool enabled) {
     auto& c=impl_->chain;const auto before=c;
     std::vector<uint32_t> layers;
     for(uint32_t i=0;i<c.nodeCount;++i)if(c.nodes[i].type==engine::EffectType::NrEnhance)layers.push_back(i);
-    if(layers.empty())return false;
+    if(layers.empty()){
+        // The master switch is the natural "turn NR on" action; with no layer
+        // yet, create the first one enabled instead of silently doing nothing.
+        if(!enabled)return false;
+        if(addEffect(QStringLiteral("nr"))<0)return false;
+        for(uint32_t i=0;i<impl_->chain.nodeCount;++i)
+            if(impl_->chain.nodes[i].type==engine::EffectType::NrEnhance)impl_->chain.nodes[i].enabled=true;
+        if(!impl_->revalidate(true)){
+            const auto error=impl_->validation.message;c=before;impl_->revalidate();
+            emit notice(uiText(error),true);emitChainChanged();return false;
+        }
+        veyra::log::info("ui-nr","master switch on created first layer");
+        emitChainChanged();emit settingsChanged();
+        return true;
+    }
     auto& restore=impl_->nrMasterRestore;
     if(!enabled){
         restore.clear();
