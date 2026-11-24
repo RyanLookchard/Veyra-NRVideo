@@ -777,6 +777,7 @@ bool EnhanceGraph::initialize(const EnhanceGraphDesc& desc)
     if(context_.adapter().vendorId!=0x10DE && desc_.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia)
         desc_.opticalFlowBackend=engine::OpticalFlowBackend::AmdFidelityFx;
     nrEnabled_ = desc.enableNr && !desc.noFeatures && (!desc.noNgx || lmxxfNr_ || intelNr_);
+    veyra::log::info("nr-backend",std::format("init enableNr={} noNgx={} noFeatures={} lmxxf={} intel={} nrEnabled={} nrRuntime={} vendor=0x{:04X}",desc.enableNr,desc.noNgx,desc.noFeatures,lmxxfNr_,intelNr_,nrEnabled_,int(desc.nrRuntime),context_.adapter().vendorId));
     fgEnabled_ = desc.enableFg && !desc.noFeatures && !desc.stillImage &&
         desc.frameGenerationBackend != engine::FrameGenerationBackend::XeSS &&
         (!desc.noNgx || engine::fsrFrameGeneration(desc.frameGenerationBackend)||desc.frameGenerationBackend==engine::FrameGenerationBackend::Vfg||desc.frameGenerationBackend==engine::FrameGenerationBackend::Anr||
@@ -4684,6 +4685,10 @@ bool EnhanceGraph::applySettings(const engine::EnhancementSettings& s){
          ((desc_.videoSrQuality==0||(desc_.dualSr&&desc_.dualSrQuality==0))&&s.dlssSrModel!=desc_.dlssSrModel)))||
        (dlaaRequested()&&s.dlssSrModel!=desc_.dlssSrModel)||
        (s.multiplier>1&&s.frameGenerationBackend==engine::FrameGenerationBackend::Dlss&&(!fgCapsAvailable_||s.multiplier-1>uint32_t(fgMultiFrameMax_))))return false;
+    // NR enabled but no backend was created at build time (e.g. NR was off at
+    // open, or the runtime changed). A live update cannot create the backend;
+    // refuse so the controller rebuilds the graph.
+    if(s.nr && !nrCreated())return false;
     // The colour master switch changes the graph shape (tables + shader branch)
     // and must rebuild; every other colour field is a live uniform update.
     if(s.color.enabled!=desc_.color.enabled)return false;

@@ -2058,6 +2058,7 @@ void EngineController::run(HWND window,std::wstring path,PlayerOptions options,s
                        gd.dualSr!=nextDesc.dualSr||gd.dualSrQuality!=nextDesc.dualSrQuality||gd.firstSrWidth!=nextDesc.firstSrWidth||gd.firstSrHeight!=nextDesc.firstSrHeight||
                        gd.srInputWidth!=nextDesc.srInputWidth||gd.srInputHeight!=nextDesc.srInputHeight||
                        gd.srOutputWidth!=nextDesc.srOutputWidth||gd.srOutputHeight!=nextDesc.srOutputHeight)rebuild=true;
+                    veyra::log::info("settings",std::format("rebuild={} gd.enableNr={} nextDesc.enableNr={} requested.nr={} requested.nrRuntime={} gd.nrRuntime={} nextDesc.nrRuntime={}",rebuild,gd.enableNr,nextDesc.enableNr,requested.nr,int(requested.nrRuntime),int(gd.nrRuntime),int(nextDesc.nrRuntime)));
                     bool accepted=ring.drainQueue();out={};hasOutput=false;
                     resetRecord->rebuilt=rebuild;
                     markResetStage(diagnostics::ResetStage::Drain);
@@ -2087,6 +2088,7 @@ void EngineController::run(HWND window,std::wstring path,PlayerOptions options,s
                             }
                         }
                         markResetStage(diagnostics::ResetStage::Destroy);
+                        veyra::log::info("settings",std::format("reused={} accepted-pending",reused));
                         accepted=reused?(graph->applySettings(requested)&&openPreparedPresenter(next)):
                             initializePreview(nextDesc,next,preserveWorkingFg,preserveWorkingNr);
                         markResetStage(diagnostics::ResetStage::Create);

@@ -940,7 +940,10 @@ struct QmlPlayerBridge::Impl {
                 *projected = acceptedChain; incomplete = true;
             }
         } else validation = engine::validateChain(chain);
-        if(!validation.accepted && !incomplete)return false;
+        if(!validation.accepted && !incomplete){
+            veyra::log::warn("qml-settings",std::format("revalidate rejected apply={} mode={} message={}",apply,chain.mode==engine::ChainMode::Node?"node":"list",validation.message));
+            return false;
+        }
         const auto previous = prior ? *prior : facade.pendingSettings();
         auto s = facade.pendingSettings();
         if (chain.mode == engine::ChainMode::Node && !incomplete) {
@@ -960,11 +963,12 @@ struct QmlPlayerBridge::Impl {
         engine::fromChain(*projected, s);
         s.content=engine::currentContentRate(s.content);
         if(const auto error=s.validate();!error.empty()){
-            veyra::log::error("qml-settings",error);
+            veyra::log::error("qml-settings",std::format("{} nr={} nrRuntime={} apply={}",error,s.nr,int(s.nrRuntime),apply));
             validation={false,"效果参数无效，未提交；详见诊断日志"};return false;
         }
         const auto order = engine::runtimeOrder(*projected);
         const bool changed = s != previous || order != engine::runtimeOrder(acceptedChain);
+        veyra::log::info("qml-settings",std::format("revalidate apply={} nr={} nrRuntime={} layers={} changed={}",apply,s.nr,int(s.nrRuntime),s.nrLayerCount,changed));
         if (apply && changed) {
             if (const auto reason = unavailableEffects(s); !reason.isEmpty()) {
                 validation = {false, "当前硬件或包不支持所选效果，请查看组件页"};
