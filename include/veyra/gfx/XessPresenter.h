@@ -16,7 +16,7 @@ public:
     // inputs by the media clock (an application frame limiter, which Intel's
     // XeLL guide says should not run together with XeLL sleep); keep the XeLL
     // markers and sleep call but let pass-through mode make the sleep trivial.
-    bool initialize(ID3D12Device*,ID3D12CommandQueue*,IDXGIFactory2*,HWND,const DXGI_SWAP_CHAIN_DESC1&,IDXGISwapChain3**,uint32_t fgMultiplier=1,bool lowLatencySleep=true);
+    bool initialize(ID3D12Device*,ID3D12CommandQueue*,IDXGIFactory2*,HWND,const DXGI_SWAP_CHAIN_DESC1&,IDXGISwapChain3**,uint32_t fgMultiplier=1,bool lowLatencySleep=true,uint32_t adapterVendorId=0);
     uint32_t beginInput();
     bool beginProcessing(uint32_t frameId);
     bool endProcessing(uint32_t frameId);

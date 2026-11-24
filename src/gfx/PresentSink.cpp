@@ -228,7 +228,7 @@ bool PresentSink::initialize(ID3D12Device* device, ID3D12CommandQueue* queue,
         for(auto& b:backBuffers_)b.Reset();
         swapChain_.Reset();swapChain4_.Reset();
         xess_=std::make_unique<XessPresenter>();
-        if(!xess_->initialize(device,queue,factory_.Get(),hwnd_,scd,swapChain_.GetAddressOf(),desc.fgMultiplier,desc.xessLowLatencySleep)){
+        if(!xess_->initialize(device,queue,factory_.Get(),hwnd_,scd,swapChain_.GetAddressOf(),desc.fgMultiplier,desc.xessLowLatencySleep,desc.adapterVendorId)){
             // XeSS is an optional experimental presenter. A missing or
             // incompatible local runtime must not prevent basic playback.
             log::warn("present", "XeSS FG initialization failed; falling back to native presentation");

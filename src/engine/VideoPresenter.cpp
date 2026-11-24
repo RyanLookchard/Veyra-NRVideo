@@ -73,6 +73,7 @@ bool VideoPresenter::open(gfx::D3D12DeviceContext& ctx,HWND window,pipeline::Enh
     gfx::PresentSink::Desc d;d.targetWindow=window;d.width=std::max(1L,rc.right);d.height=std::max(1L,rc.bottom);d.vsync=false;d.tearing=false;
     d.waitable=!GetEnvironmentVariableW(L"VEYRA_TEST_LEGACY_SWAPCHAIN",nullptr,0);
     d.hdr=graph.hdrOutput();d.hdr10=graph.hdr10Output();d.xess=graph.xessEnabled();d.captureCompatible=captureCompatible;d.fgMultiplier=graph.fgMultiplier();
+    d.adapterVendorId=ctx.adapter().vendorId;
     // Candidate X2 (2026-09-22) tried XeLL pass-through for media-clock-paced
     // sources; the audited provider then rejects generation with -15
     // (LATENCY_REDUCTION_UNSUPPORTED) and Intel's guide states frame

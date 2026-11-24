@@ -545,7 +545,7 @@ int main(){
     }
     check(pipeline::ResolutionPlan::make({8000,2000},true,pipeline::NrSizePolicy::Native,true,1,pipeline::SrTarget::Qhd).output==pipeline::Extent{8000,2000},"small target never shrinks long image");
     engine::EnhancementSettings s;check(s.validate().empty(),"default settings valid");
-    check(engine::motionUsesFlow(s.fgMotion,engine::FrameGenerationBackend::Dlss)&&!engine::motionUsesFlow(s.fgMotion,engine::FrameGenerationBackend::XeSS),"default motion follows provider: DLSS flow, XeSS zero");
+    check(engine::motionUsesFlow(s.fgMotion,engine::FrameGenerationBackend::Dlss)&&engine::motionUsesFlow(s.fgMotion,engine::FrameGenerationBackend::XeSS),"default motion uses refined flow for DLSS and XeSS");
     check(!engine::motionUsesFlow(engine::MotionSource::Zero)&&engine::motionUsesFlow(engine::MotionSource::OpticalFlow),"explicit consumer motion choice wins");
     auto audioOnly=s;audioOnly.revision=2;audioOnly.audioSync=engine::AudioSyncMode::Manual;audioOnly.audioOffsetMs=90;
     check(audioOnly.sameVideoConfiguration(s),"audio changes do not invalidate video configuration");
@@ -592,8 +592,10 @@ int main(){
         engine::EnhancementSettings settings;
         settings.videoSrQuality=engine::kVideoSrFsr;
         check(settings.validate().empty(),"AMD FSR upscaling is a valid video SR quality");
-        settings.videoSrQuality=engine::kVideoSrFsr+1;
-        check(!settings.validate().empty(),"video SR quality above the AMD FSR slot is rejected");
+        settings.videoSrQuality=engine::kVideoSrXess;
+        check(settings.validate().empty(),"XeSS SR is a valid video SR quality");
+        settings.videoSrQuality=engine::kVideoSrXess+1;
+        check(!settings.validate().empty(),"video SR quality above the XeSS slot is rejected");
         settings.videoSrQuality=0;
         check(settings.validate().empty(),"DLSS SR quality remains valid");
     }
@@ -940,10 +942,10 @@ int main(){
     {
         using F=engine::FrameGenerationBackend;
         check(engine::defaultFrameGenerationBackend(0x1002)==F::Fsr,"AMD fresh session prefers FSR");
-        check(engine::defaultFrameGenerationBackend(0x8086)==F::Fsr,"Intel fresh session prefers FSR");
+        check(engine::defaultFrameGenerationBackend(0x8086)==F::XeSS,"Intel fresh session prefers native XeSS");
         check(engine::defaultFrameGenerationBackend(0x10DE)==F::Dlss,"NVIDIA fresh session retains DLSS default");
         check(engine::defaultFrameGenerationBackend(0x1002,true)==F::Fsr4,"AMD RX 9000 fresh session prefers FSR 4 ML");
-        check(engine::defaultFrameGenerationBackend(0x10DE,true)==F::Dlss&&engine::defaultFrameGenerationBackend(0x8086,true)==F::Fsr,
+        check(engine::defaultFrameGenerationBackend(0x10DE,true)==F::Dlss&&engine::defaultFrameGenerationBackend(0x8086,true)==F::XeSS,
             "the RX 9000 flag only applies to AMD adapters");
         const engine::FrameGenerationAvailability crossVendor{false,true,true,false,false};
         check(engine::restoredFrameGenerationBackend(F::Dlss,crossVendor)==F::Fsr,"unavailable saved DLSS moves to FSR ahead of XeSS");

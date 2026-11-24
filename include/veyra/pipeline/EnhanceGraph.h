@@ -58,6 +58,7 @@ namespace veyra::gfx {
 class D3D12DeviceContext;
 class CommandSlotRing;
 class FsrSrBackend;
+class XessSrBackend;
 class FsrFgPresenter;
 class AmfFrcBackend;
 }
@@ -783,6 +784,10 @@ public:
         (desc_.finalSrQuality()==engine::kVideoSrFsr || desc_.firstSrRuns(engine::kVideoSrFsr)); }
     // Out of line: the backend type is only forward declared here.
     bool fsrSrEnabled() const;
+    // Intel XeSS upscaling: cross-vendor (DP4a) / XMX on Arc; temporal like FSR.
+    bool xessSrRequested() const { return desc_.enableSr && !desc_.stillImage &&
+        (desc_.finalSrQuality()==engine::kVideoSrXess || desc_.firstSrRuns(engine::kVideoSrXess)); }
+    bool xessSrEnabled() const;
     // Requested output multiplier (2 = one generated frame). Consumed by the
     // present sink so the XeSS provider knows how many frames to generate.
     uint32_t fgMultiplier() const { return desc_.fgMultiplier; }
@@ -1187,6 +1192,9 @@ private:
     // Double SR first passes on DLSS SR / FSR (the final pass keeps the members above).
     std::unique_ptr<ngx::DlssSrBackend> firstDlssSrBackend_;
     std::unique_ptr<gfx::FsrSrBackend> firstFsrSrBackend_;
+    std::unique_ptr<gfx::XessSrBackend> xessSrBackend_;
+    std::unique_ptr<gfx::XessSrBackend> firstXessSrBackend_;
+    bool initXessSr();
     SignedHdrRestore srHdrRestore_,firstSrHdrRestore_;
     // Constant far depth and zero motion for the temporal SR passes. The source
     // extent for a single FSR pass; under double SR the largest render/motion

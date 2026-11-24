@@ -90,6 +90,8 @@ inline size_t exportBitrateIndex(uint32_t mbps){for(size_t i=0;i<kExportBitrateC
 // videoSrQuality values: 0 = DLSS SR, 1..4 = RTX video SR quality steps,
 // 5 = AMD FSR upscaling (vendor neutral; verified on an NVIDIA adapter).
 inline constexpr uint32_t kVideoSrFsr=5;
+// 6 = Intel XeSS super resolution (cross-vendor DP4a, XMX on Arc). Temporal.
+inline constexpr uint32_t kVideoSrXess=6;
 // Fresh SR selections use RTX Video SR medium; explicit saved selections retain
 // their numeric IDs. The UI seeds FSR separately on AMD/Intel adapters.
 inline constexpr uint32_t kDefaultVideoSrQuality=2;
@@ -108,9 +110,9 @@ constexpr bool ngxVideoSr(uint32_t q){return q>=1&&q<=4;}
 constexpr bool vfxVideoSr(uint32_t q){return (q>=16&&q<=19)||q==21||q==23;}
 constexpr bool vfxVideoSrNeedsAmpere(uint32_t q){return q==21||q==23;}
 constexpr bool rtxVideoSr(uint32_t q){return ngxVideoSr(q)||vfxVideoSr(q);}
-constexpr bool validVideoSrQuality(uint32_t q){return q<=kVideoSrFsr||vfxVideoSr(q);}
-// DLSS SR and FSR are temporal: they read the SR motion source. RTX Video SR is spatial.
-constexpr bool temporalVideoSr(uint32_t q){return q==0||q==kVideoSrFsr;}
+constexpr bool validVideoSrQuality(uint32_t q){return q<=kVideoSrXess||vfxVideoSr(q);}
+// DLSS SR, FSR and XeSS SR are temporal: they read the SR motion source. RTX Video SR is spatial.
+constexpr bool temporalVideoSr(uint32_t q){return q==0||q==kVideoSrFsr||q==kVideoSrXess;}
 inline constexpr uint32_t kVfxVideoSrQualities[]={16,17,18,19,21,23};
 constexpr VideoSrFamily videoSrFamily(uint32_t q){
     return q>=16&&q<=19?VideoSrFamily::HighBitrate:q==21||q==23?VideoSrFamily::Streaming:VideoSrFamily::Standard;
@@ -174,8 +176,11 @@ enum class HdrOutputMode { Hdr10, ScRgb };
 enum class MotionSource { Zero, OpticalFlow, Automatic };
 constexpr bool motionUsesFlow(MotionSource source,FrameGenerationBackend backend=FrameGenerationBackend::Dlss) {
     // VFG and AMD FRC estimate motion themselves from the two pictures.
+    // XeSS under Automatic now uses the refined optical flow like the in-graph
+    // backends (the flow path is already wired for the XeSS present sink);
+    // explicit Zero still wins. Previously XeSS defaulted to zero motion.
     return backend!=FrameGenerationBackend::Vfg&&backend!=FrameGenerationBackend::AmdFrc&&
-        (source==MotionSource::OpticalFlow||(source==MotionSource::Automatic&&backend!=FrameGenerationBackend::XeSS));
+        (source==MotionSource::OpticalFlow||source==MotionSource::Automatic);
 }
 constexpr std::string_view frameGenerationBackendName(FrameGenerationBackend backend) {
     switch(backend) {

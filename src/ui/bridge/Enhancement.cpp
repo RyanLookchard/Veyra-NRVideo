@@ -143,7 +143,10 @@ void QmlPlayerBridge::setVideoSrQuality(int value) {
     auto s = settings();
     if (int(s.videoSrQuality) == value) return;
     s.videoSrQuality = unsigned(value);
-    if (impl_->commit(s)) emit settingsChanged();
+    veyra::log::info("sr-set", std::format("value={} capAvailable={} unavailable={} pendingBefore={}", value, cap.value("available").toBool(), unavailableEffects(s).toStdString(), impl_->facade.pendingSettings().videoSrQuality));
+    const bool ok = impl_->commit(s);
+    veyra::log::info("sr-set", std::format("commit={} pendingAfter={}", ok, impl_->facade.pendingSettings().videoSrQuality));
+    if (ok) emit settingsChanged();
 }
 int QmlPlayerBridge::audioOffsetMs() const { return settings().audioOffsetMs; }
 void QmlPlayerBridge::setAudioOffsetMs(int value) {

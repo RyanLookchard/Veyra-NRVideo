@@ -342,7 +342,7 @@ bool EngineController::selectAudioTrack(uint64_t session,int streamIndex){
     pendingAudioSession_=session;pendingAudioTrack_=streamIndex;return true;
 }
 bool EngineController::requestSettings(EnhancementSettings s,std::optional<ChainRuntimeOrder> order,uint64_t* acceptedRevision){
-    if(!s.validate().empty()){veyra::log::warn("settings","invalid whole settings transaction rejected");status(L"整套设置无效，未应用任何字段",false);return false;}
+    if(!s.validate().empty()){veyra::log::warn("settings",std::format("invalid whole settings transaction rejected: {} (srQuality={} dualQuality={})",s.validate(),s.videoSrQuality,s.dualSrQuality));status(L"整套设置无效，未应用任何字段",false);return false;}
     if(order){
         // Fail before changing desired state. This is a shape admission check,
         // not a GPU test; actual dimensions are compiled again at graph creation.
@@ -911,6 +911,7 @@ void EngineController::run(HWND window,std::wstring path,PlayerOptions options,s
                         // (missing local runtime, unsupported layout) degrades
                         // to the plain scale path with a visible warning.
                         if(opened&&graph->fsrSrRequested()&&!graph->fsrSrEnabled()){opened=false;failure=FailedBackend::Sr;}
+                        if(opened&&graph->xessSrRequested()&&!graph->xessSrEnabled()){opened=false;failure=FailedBackend::Sr;}
                     }
                 if(stop_)return false;
                 if(opened){

@@ -144,8 +144,10 @@ try:
     if log.exists():
         log.unlink()
     env = os.environ.copy()
-    env.update(VEYRA_LOG_FILE=str(log), QML_DISABLE_DISK_CACHE='1', QML2_IMPORT_PATH=str(app / 'qml'),
-               TEMP=str(work), TMP=str(work))
+    # The app runs with cwd=app; relative env paths would resolve there and the
+    # runner would watch an empty file. Keep every handed-over path absolute.
+    env.update(VEYRA_LOG_FILE=str(log.resolve()), QML_DISABLE_DISK_CACHE='1', QML2_IMPORT_PATH=str((app / 'qml').resolve()),
+               TEMP=str(work.resolve()), TMP=str(work.resolve()))
     command = [str(app / 'veyra_qml_ui.exe'), '--data-dir', str(work / 'profile'), '--exit-after', '280000'] + extra
     proc = subprocess.Popen(command, cwd=app, env=env, stdout=(out / 'stdio.log').open('w'), stderr=subprocess.STDOUT)
     seen = 0

@@ -907,6 +907,11 @@ struct QmlPlayerBridge::Impl {
             return false;
         }
         if(!facade.applySettings(settings,engine::runtimeOrder(runtime)))return false;
+        // List-mode global controls (SR quality/target, FG backend, flow, ...)
+        // are committed through here; keep draftGlobals in sync so a later
+        // revalidate (e.g. toggling the SR node) does not overwrite the new
+        // choice with a stale draft value.
+        draftGlobals = engine::ChainGlobalSettings::capture(settings);
         options = engine::PlayerOptions::from(settings,engine::runtimeOrder(runtime));
         return true;
     }

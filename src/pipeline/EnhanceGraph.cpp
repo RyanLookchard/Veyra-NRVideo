@@ -36,6 +36,7 @@
 #include "veyra/ngx/AmpereMfgUnlock.h"
 #include "veyra/ngx/NvapiArchSpoof.h"
 #include "veyra/gfx/FsrSrBackend.h"
+#include "veyra/gfx/XessSrBackend.h"
 #include "veyra/gfx/FsrFgPresenter.h"
 #include "veyra/gfx/AmfFrcBackend.h"
 #include "veyra/ngx/DlssNrParameters.h"
@@ -88,7 +89,7 @@ unsigned vfxVideoSrPasses(const EnhanceGraphDesc& d){
     return unsigned(engine::vfxVideoSr(finalVideoSrQuality(d)))+unsigned(vfxFirstSrPass(d));
 }
 // DLSS SR and FSR are temporal: they read guidance motion, RTX Video SR does not.
-bool temporalSrQuality(uint32_t quality){return quality==0||quality==engine::kVideoSrFsr;}
+bool temporalSrQuality(uint32_t quality){return quality==0||quality==engine::kVideoSrFsr||quality==engine::kVideoSrXess;}
 bool temporalSrPass(const EnhanceGraphDesc& d){
     return temporalSrQuality(finalVideoSrQuality(d))||(d.dualSr&&temporalSrQuality(d.videoSrQuality));
 }
@@ -98,7 +99,7 @@ bool mixedDualSr(const EnhanceGraphDesc& d){
     return d.dualSr&&(!engine::rtxVideoSr(d.videoSrQuality)||!engine::rtxVideoSr(d.dualSrQuality));
 }
 const char* srRuntimeName(uint32_t quality){
-    return quality==0?"dlss":quality==engine::kVideoSrFsr?"fsr":engine::vfxVideoSr(quality)?"video-effects":"ngx";
+    return quality==0?"dlss":quality==engine::kVideoSrFsr?"fsr":quality==engine::kVideoSrXess?"xess":engine::vfxVideoSr(quality)?"video-effects":"ngx";
 }
 
 // N1 packed capture ingress helpers. Codes match pipeline::packedInputCode:
@@ -816,7 +817,7 @@ bool EnhanceGraph::initialize(const EnhanceGraphDesc& desc)
     // for a single FSR pass, the largest DLSS SR / FSR input or motion extent of
     // a double SR (a first DLSS pass takes motion at its result, a second DLSS
     // pass at the work extent, a second FSR pass renders at the SR input).
-    const bool fsrSinglePass=srEnabled_&&!desc_.dualSr&&desc_.videoSrQuality==engine::kVideoSrFsr;
+    const bool fsrSinglePass=srEnabled_&&!desc_.dualSr&&(desc_.videoSrQuality==engine::kVideoSrFsr||desc_.videoSrQuality==engine::kVideoSrXess);
     const bool temporalDual=srEnabled_&&desc_.dualSr&&(temporalSrQuality(desc_.videoSrQuality)||temporalSrQuality(desc_.dualSrQuality));
     fsrAuxW_=fsrAuxH_=0;
     if(fsrSinglePass||temporalDual){
@@ -900,6 +901,7 @@ bool EnhanceGraph::initialize(const EnhanceGraphDesc& desc)
     if (!initZeroAndDepthTextures()) return false;
     if (!initNvof()) { failedBackend_=engine::FailedBackend::OpticalFlow; return false; }
     if (!initFsrSr()) return false;
+    if (!initXessSr()) return false;
     if (!initFsrFg()) return false;
     if (!initVfg()) return false;
     if (!initAmfFrc()) return false;
@@ -1342,6 +1344,36 @@ bool EnhanceGraph::fsrSrEnabled() const
     if(!finalFsr&&!firstFsr)return false;
     return (!finalFsr||(fsrSrBackend_!=nullptr&&fsrSrBackend_->created()))&&
            (!firstFsr||(firstFsrSrBackend_!=nullptr&&firstFsrSrBackend_->created()));
+}
+
+bool EnhanceGraph::xessSrEnabled() const
+{
+    const bool finalX=desc_.finalSrQuality()==engine::kVideoSrXess,firstX=desc_.firstSrRuns(engine::kVideoSrXess);
+    if(!finalX&&!firstX)return false;
+    return (!finalX||(xessSrBackend_!=nullptr&&xessSrBackend_->created()))&&
+           (!firstX||(firstXessSrBackend_!=nullptr&&firstXessSrBackend_->created()));
+}
+
+bool EnhanceGraph::initXessSr()
+{
+    if (!xessSrRequested()) return true;
+    if (desc_.noFeatures) { veyra::log::warn("xess-sr","feature-disabled configuration: XeSS upscaling skipped"); return true; }
+    const bool hdr=desc_.hdrWorking();
+    const bool finalX=desc_.finalSrQuality()==engine::kVideoSrXess,firstX=desc_.firstSrRuns(engine::kVideoSrXess);
+    const uint32_t renderW=desc_.dualSr?srInW_:srcW_,renderH=desc_.dualSr?srInH_:srcH_;
+    const auto create=[&](std::unique_ptr<gfx::XessSrBackend>& backend,uint32_t inW,uint32_t inH,uint32_t outW,uint32_t outH,const char* pass){
+        backend=std::make_unique<gfx::XessSrBackend>();
+        if(!backend->initialize(context_.device(),inW,inH,outW,outH,hdr)){
+            backend.reset();
+            veyra::log::error("xess-sr",std::format("XeSS upscaling unavailable{}; the engine will disable the stage",pass));
+            return false;
+        }
+        veyra::log::info("xess-sr",std::format("selected{} render={}x{} output={}x{} provider={} hdr={}",pass,inW,inH,outW,outH,backend->providerVersion(),hdr));
+        return true;
+    };
+    if(finalX&&!create(xessSrBackend_,renderW,renderH,workW_,workH_,desc_.dualSr?" second pass":""))return true;
+    if(firstX&&!create(firstXessSrBackend_,srcW_,srcH_,desc_.firstSrWidth,desc_.firstSrHeight," first pass"))return true;
+    return true;
 }
 
 void EnhanceGraph::applyAdaMfgUnlock()
@@ -3753,6 +3785,27 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         ++metrics_.srEvaluateCount;
         finishTemporalOutput(list,srHdrRestore_,workRgba_.Get());
         gpuTimer_.mark(list,GpuStage::Sr,true);
+    } else if(!mixed&&srEnabled_&&xessSrEnabled()){
+        // Intel XeSS upscaling: temporal, render-extent linear color + estimated
+        // current->previous motion + constant far depth, zero jitter (video).
+        gpuTimer_.mark(list,GpuStage::Sr);
+        const double deltaMs = (prevPtsMs_>=0.0&&ptsMs>prevPtsMs_)?(ptsMs-prevPtsMs_):16.6;
+        auto* srInput=srStageInput();
+        tracker_.transition(list,srInput,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        const bool validMotion=desc_.srUsesFlow()&&haveFlow;
+        auto* srMotion=validMotion?flowTex_.Get():fsrSrZeroMotion_.Get();
+        tracker_.transition(list,srMotion,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        tracker_.transition(list,fsrSrDepth_.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        auto* xTarget=srHdrRestore_.raw?srHdrRestore_.raw.Get():workRgba_.Get();
+        tracker_.transition(list,xTarget,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        if(!xessSrBackend_->evaluate(list,srInput,srMotion,fsrSrDepth_.Get(),xTarget,
+                                    srcW_,srcH_,workW_,workH_,reset||(desc_.srUsesFlow()&&!haveFlow),float(deltaMs))){
+            failedBackend_=engine::FailedBackend::Sr;
+            return false;
+        }
+        ++metrics_.srEvaluateCount;
+        finishTemporalOutput(list,srHdrRestore_,workRgba_.Get());
+        gpuTimer_.mark(list,GpuStage::Sr,true);
     } else if(!mixed&&srEnabled_&&(videoSrBackend_||vfxSrBackend_)){
         if(!runVideoSr())return false;
     } else if (!mixed && srEnabled_ && srBackend_ && srBackend_->created()) {
@@ -4748,6 +4801,8 @@ void EnhanceGraph::shutdown()
     for(auto& motion:presentMotion_)motion.Reset();
     if(fsrSrBackend_){fsrSrBackend_->release();fsrSrBackend_.reset();}
     if(firstFsrSrBackend_){firstFsrSrBackend_->release();firstFsrSrBackend_.reset();}
+    if(xessSrBackend_){xessSrBackend_->release();xessSrBackend_.reset();}
+    if(firstXessSrBackend_){firstXessSrBackend_->release();firstXessSrBackend_.reset();}
     fsrSrDepth_.Reset();
     fsrSrZeroMotion_.Reset();upFsrSrZeroMotion_.Reset();
     upFsrSrDepth_.Reset();
