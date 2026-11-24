@@ -239,7 +239,13 @@ bool QmlPlayerBridge::extractIntelNrWeights(const QString& dllPath) {
             self->refreshComponentList();
             if (ok) {
                 const QString which = QString::fromUtf8(a && b ? "A/B" : a ? "仅 A（该 DLL 无 B 网络，需 310.9.16+）" : "仅 B");
-                emit self->notice(self->tr("Intel NR 权重提取完成（%1）。在 NR 版本里选择 Intel XMX 即可使用").arg(which), false);
+                emit self->notice(self->tr("Intel NR 权重提取完成（%1）。正在重新应用 NR…").arg(which), false);
+                // The first graph build raced the extraction and failed with
+                // weights missing; re-apply so NR rebuilds now that weights exist.
+                if (self->settings().nr && self->settings().nrRuntime == engine::NrRuntime::IntelXmx) {
+                    auto s = self->settings();
+                    self->impl_->facade.applySettings(s, std::nullopt);
+                }
             } else {
                 const QString detail = QString::fromUtf8((errA.empty() ? errB : errA).c_str());
                 emit self->notice(self->tr("Intel NR 权重提取失败：%1").arg(detail), true);

@@ -105,6 +105,7 @@ bool IntelNrBackend::weightsAvailable(const std::filesystem::path& p,bool smallM
 
 bool IntelNrBackend::open(const std::filesystem::path& directory,ID3D12Device* device,ID3D12CommandQueue* queue,uint32_t w,uint32_t h,bool smallModel){
     close();impl_=std::make_unique<Impl>();auto& s=*impl_;
+    log::info("intel-nr",std::format("open requested dir={} {}x{} model={}",directory.string(),w,h,smallModel?"B":"A"));
     if(!device||!queue||!directory.is_absolute()||!w||!h||uint64_t(w)*h>(1u<<28))return s.fail("invalid Intel NR device, queue, path or extent");
     if(!runtimeAvailable(directory))return s.fail("Intel NR daemon subset is incomplete; install python/, src/ and work/ under runtime_local/intel/nr");
     if(!weightsAvailable(directory,smallModel))return s.fail(std::format("Intel NR weights missing (work/mlxw/{}); extract them from your own nvngx_dlssnr.dll first",smallModel?"dlssnr-b-logical.safetensors":"dlssnr-logical.safetensors"));

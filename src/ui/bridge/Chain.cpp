@@ -90,7 +90,7 @@ bool QmlPlayerBridge::setNrLayerParameter(int index,const QString& key,double va
     if(index<0||uint32_t(index)>=impl_->chain.nodeCount||
        impl_->chain.nodes[index].type!=engine::EffectType::NrEnhance||!std::isfinite(value))return false;
     if(key=="runtime") {
-        if(value!=0&&value!=1&&value!=2&&value!=3&&value!=4)return false;
+        if(value!=0&&value!=1&&value!=2&&value!=3&&value!=4&&value!=5)return false;
         value=int(engine::currentNrRuntime(static_cast<engine::NrRuntime>(int(value))));
         const auto cap = effectCapabilities().value("nr" + QString::number(int(value))).toMap();
         if (!cap.value("available").toBool()) { emit notice(cap.value("reason").toString(), true); return false; }
