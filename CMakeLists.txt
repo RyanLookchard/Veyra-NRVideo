@@ -457,11 +457,20 @@ add_library(veyra_pipeline STATIC
   src/pipeline/AmdHipPreflight.cpp
   src/pipeline/LmxxfNrBackend.cpp
   src/pipeline/Rdna3NrBackend.cpp
-  src/pipeline/IntelNrBackend.cpp
   src/pipeline/VfgBackend.cpp
   src/pipeline/VfgAmpereCompat.cpp
   src/pipeline/VfxSrBackend.cpp
 )
+# The experimental Intel XMX NR worker needs the vendored protocol-3 headers
+# (third_party_local, gitignored like the other SDKs); without them the backend
+# compiles as a stub that reports the runtime unavailable.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol/nr_gpu_wire.h")
+  target_sources(veyra_pipeline PRIVATE src/pipeline/IntelNrBackend.cpp)
+  target_compile_definitions(veyra_pipeline PRIVATE VEYRA_HAS_INTEL_NR=1)
+  target_include_directories(veyra_pipeline PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol)
+else()
+  target_sources(veyra_pipeline PRIVATE src/pipeline/IntelNrBackendStub.cpp)
+endif()
 veyra_apply_warnings(veyra_pipeline)
 # FFmpeg/NVOF headers are third-party: /WX stays off for this target.
 target_compile_options(veyra_pipeline PRIVATE /WX-)
@@ -470,7 +479,6 @@ target_compile_definitions(veyra_pipeline PUBLIC
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
   VEYRA_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
 target_include_directories(veyra_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(veyra_pipeline PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol)
 set(VEYRA_CUDA_DRIVER_INCLUDE_DIR "" CACHE PATH "External CUDA driver headers for native VFG (never vendored)")
 if(EXISTS "${VEYRA_CUDA_DRIVER_INCLUDE_DIR}/cuda.h")
   target_include_directories(veyra_pipeline PRIVATE "${VEYRA_CUDA_DRIVER_INCLUDE_DIR}")
