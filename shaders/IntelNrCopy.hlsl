@@ -17,11 +17,14 @@ cbuffer IntelNrParams : register(b0)
     uint2 pad;
 };
 
+#if defined(ENCODE)
 Texture2D<unorm float4> proxyTex : register(t0);
 RWByteAddressBuffer inputBuf : register(u0);
+#elif defined(COMPOSE)
 ByteAddressBuffer outputBuf : register(t1);
 Texture2D<float4> originalTex : register(t2);
-RWTexture2D<float4> finalTex : register(u1);
+RWTexture2D<float4> finalTex : register(u0);
+#endif
 
 float SrgbDecode1(float c)
 {

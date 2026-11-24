@@ -120,9 +120,13 @@ bool IntelNrBackend::open(const std::filesystem::path& directory,ID3D12Device* d
     const auto hr=nr_gpu_d3d12_open(&s.session,device,w,h,37,(uint64_t(GetTickCount64())<<16)|GetCurrentProcessId(),0);
     if(hrFailed(__LINE__,hr))return s.fail(std::format("Intel NR shared session allocation hr=0x{:X}",unsigned(hr)));
     s.decoded=makeTexture(device,w,h,DXGI_FORMAT_R16G16B16A16_FLOAT,true);
+    if(!s.decoded)return s.fail("Intel NR decoded texture allocation failed");
     std::vector<uint8_t> code;
-    if(!s.decoded||!s.encode.loadShader("IntelNrEncode.dxil",code)||!s.encode.create(device,code,2,1,1)||
-       !s.compose.loadShader("IntelNrCompose.dxil",code)||!s.compose.create(device,code,5,3,1)||!s.views.initialize(device,8))return s.fail("Intel NR copy shader setup failed");
+    if(!s.encode.loadShader("IntelNrEncode.dxil",code))return s.fail("Intel NR encode shader missing");
+    if(!s.encode.create(device,code,2,1,1))return s.fail("Intel NR encode pipeline create failed");
+    if(!s.compose.loadShader("IntelNrCompose.dxil",code))return s.fail("Intel NR compose shader missing");
+    if(!s.compose.create(device,code,5,3,1))return s.fail("Intel NR compose pipeline create failed");
+    if(!s.views.initialize(device,8))return s.fail("Intel NR descriptor heap init failed");
     s.pipeName=std::format("\\\\.\\pipe\\veyra-intel-nr-{}-{}",GetCurrentProcessId(),uintptr_t(device));
     const auto python=directory/L"python"/L"python.exe";
     const auto daemon=directory/L"src"/L"layer"/L"nr_daemon.py";
