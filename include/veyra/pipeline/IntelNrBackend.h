@@ -29,6 +29,10 @@ public:
     bool recordOutputs(ID3D12GraphicsCommandList*,ID3D12Resource*) override;
     bool retireSubmitted() override;
     const std::string& error()const override;
+    // Forward the live model sliders to the daemon's hot-reloaded settings
+    // JSON (profile/intensity/detail_strength). Called on live settings apply;
+    // the daemon picks the file up without a restart.
+    void setKnobs(int style,float tone,float structure,float intensity);
     // Daemon subset present (python interpreter, daemon script, libxmx, shaders).
     static bool runtimeAvailable(const std::filesystem::path&);
     // Extracted weights for the chosen preset present (work/mlxw/*.safetensors).

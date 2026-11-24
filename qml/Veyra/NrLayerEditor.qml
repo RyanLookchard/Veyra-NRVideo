@@ -38,6 +38,7 @@ ColumnLayout {
     signal removeRequested(int nodeIndex)
     signal orderEdited(bool enabled)
     readonly property bool amdNr: layerData.runtime === 4
+    readonly property bool intelNr: layerData.runtime === 5
     readonly property string amdRuntimeLabel: {
         const choices = veyra.nrRuntimeChoices || []
         const choice = choices.find(entry => String(entry.id) === "4")
@@ -221,18 +222,21 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true
-        visible: editor.amdNr || !Support.available(veyra, "nr" + editor.layerData.runtime)
-        text: !Support.available(veyra, "nr" + editor.layerData.runtime) ? Support.reason(veyra, "nr" + editor.layerData.runtime) : qsTr("AMD NR（实验）：RX 7000 / 9000 使用各自运行组件，需要 HIP 7 驱动。性能模式使用 Small，关闭使用原模型；内部最高 1080p 像素预算，支持百分比尺寸。7000 系风格固定默认，9000 系沿用运行时配置。原生 HDR 保留基底，通过 SDR 代理增强后还原。7000 系仍需实卡验收。")
+        visible: editor.amdNr || editor.intelNr || !Support.available(veyra, "nr" + editor.layerData.runtime)
+        text: !Support.available(veyra, "nr" + editor.layerData.runtime) ? Support.reason(veyra, "nr" + editor.layerData.runtime)
+            : editor.intelNr ? qsTr("Intel XMX（实验）：仅 Intel Arc（XMX）。权重从您自己的 nvngx_dlssnr.dll 提取。性能模式使用网络 B（快约一倍），关闭使用网络 A。模型参数里风格/局部结构/强度生效；局部明暗/肤质/自动遮罩/UI 修正当前不影响 Intel 画面。原生 HDR 保留基底，通过 SDR 代理增强后还原。")
+            : qsTr("AMD NR（实验）：RX 7000 / 9000 使用各自运行组件，需要 HIP 7 驱动。性能模式使用 Small，关闭使用原模型；内部最高 1080p 像素预算，支持百分比尺寸。7000 系风格固定默认，9000 系沿用运行时配置。原生 HDR 保留基底，通过 SDR 代理增强后还原。7000 系仍需实卡验收。")
         color: Theme.t3; font.pixelSize: 11; wrapMode: Text.WordWrap
     }
     VSubGroup {
         objectName: "nr-model-group"
-        enabled: !editor.amdNr && Support.available(veyra, "nr" + editor.layerData.runtime)
+        enabled: Support.available(veyra, "nr" + editor.layerData.runtime)
         opacity: enabled ? 1 : 0.4
         Layout.fillWidth: true
-        label: qsTr("模型参数"); count: 6
+        label: qsTr("模型参数"); count: editor.intelNr ? 3 : 6
         Repeater {
-            model: [{key:"tone",label:qsTr("局部明暗"),min:0,max:1},
+            model: editor.intelNr ? [{key:"structure",label:qsTr("局部结构"),min:0,max:1}]
+                   : [{key:"tone",label:qsTr("局部明暗"),min:0,max:1},
                     {key:"structure",label:qsTr("局部结构"),min:0,max:1}]
             delegate: NrValueRow {
                 required property var modelData
@@ -241,6 +245,7 @@ ColumnLayout {
             }
         }
         VRow {
+            visible: !editor.intelNr
             label: qsTr("肤质 · 未证实")
             VSelect {
                 objectName: "nr-skin-mode"
@@ -250,7 +255,7 @@ ColumnLayout {
             }
         }
         NrValueRow {
-            visible: editor.layerData.skin >= 0
+            visible: !editor.intelNr && editor.layerData.skin >= 0
             spec: ({key:"skin",label:qsTr("肤质数值"),min:0,max:2})
             amount: Math.max(0,editor.layerData.skin)
             onEdited: amount => editor.edited(editor.layerData.index,"skin",amount)
@@ -265,6 +270,7 @@ ColumnLayout {
             }
         }
         VRow {
+            visible: !editor.intelNr
             label: qsTr("自动遮罩 · 实验")
             VSwitch {
                 objectName: "nr-autoMask"
@@ -273,6 +279,7 @@ ColumnLayout {
             }
         }
         VRow {
+            visible: !editor.intelNr
             label: qsTr("UI 修正 · 未证实")
             VSwitch {
                 objectName: "nr-uiCorrection"

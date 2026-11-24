@@ -10,8 +10,10 @@
 #include "veyra/pipeline/IntelNrBackend.h"
 #include "veyra/pipeline/GpuPassUtils.h"
 #include "veyra/Log.h"
+#include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <fstream>
 #include <thread>
 #include <vector>
 
@@ -56,6 +58,8 @@ struct IntelNrBackend::Impl {
     uint32_t w=0,h=0;
     bool opened=false,prepared=false,enqueued=false,outputs=false,bound=false;
     float intensity=1;uint64_t frameValue=0;
+    std::filesystem::path settingsPath;
+    int knobsStyle=-1;float knobsTone=-1,knobsStructure=-1,knobsIntensity=-1;
     std::string error;
     bool fail(const std::string& m){error=m;failed=true;log::error("intel-nr",m);return false;}
     bool healthy()const{return opened&&!failed.load()&&process&&WaitForSingleObject(process,0)==WAIT_TIMEOUT;}
@@ -123,8 +127,9 @@ bool IntelNrBackend::open(const std::filesystem::path& directory,ID3D12Device* d
     const auto python=directory/L"python"/L"python.exe";
     const auto daemon=directory/L"src"/L"layer"/L"nr_daemon.py";
     const auto pipeW=std::wstring(s.pipeName.begin(),s.pipeName.end());
-    auto command=std::format(L"\"{}\" -X utf8 -B \"{}\" --socket \"{}\" --root \"{}\" --preset {} --render-scale 1.0 --timeout 3600",
-        python.wstring(),daemon.wstring(),pipeW,directory.wstring(),smallModel?L"B":L"A");
+    s.settingsPath=directory/L"work"/L"veyra-nr-settings.json";
+    auto command=std::format(L"\"{}\" -X utf8 -B \"{}\" --socket \"{}\" --root \"{}\" --preset {} --render-scale 1.0 --timeout 3600 --settings \"{}\"",
+        python.wstring(),daemon.wstring(),pipeW,directory.wstring(),smallModel?L"B":L"A",s.settingsPath.wstring());
     // The daemon reads NR_ROOT before argparse; NR_LAYER_SPAWNED ends it with
     // Veyra; the GPU transport is opt-in via NR_GPU_IMAGE/NR_GPU_TRANSPORT.
     auto env=std::format(L"NR_GPU_IMAGE=1\0NR_GPU_TRANSPORT=1\0NR_GPU_ONLY=1\0NR_LAYER_SPAWNED={}\0NR_PRESET={}\0NR_ROOT={}\0\0",
@@ -238,6 +243,18 @@ bool IntelNrBackend::recordOutputs(ID3D12GraphicsCommandList* list,ID3D12Resourc
     s.outputs=true;return true;
 }
 bool IntelNrBackend::retireSubmitted(){auto& s=*impl_;if(!s.outputs)return true;if(!ready())return false;s.prepared=s.enqueued=s.outputs=false;return true;}
+void IntelNrBackend::setKnobs(int style,float tone,float structure,float intensity){
+    auto& s=*impl_;if(!s.opened||s.settingsPath.empty())return;
+    if(style==s.knobsStyle&&tone==s.knobsTone&&structure==s.knobsStructure&&intensity==s.knobsIntensity)return;
+    s.knobsStyle=style;s.knobsTone=tone;s.knobsStructure=structure;s.knobsIntensity=intensity;
+    // The daemon's profile table: style 0/1/2 = standard/natural/cinematic.
+    const char* profile=style==1?"natural":style==2?"cinematic":"standard";
+    const auto json=std::format("{{\"profile\":\"{}\",\"intensity\":{:.4f},\"detail_strength\":{:.4f},\"colour_strength\":1.0}}",
+        profile,std::clamp(intensity,0.f,1.f),std::clamp(structure,0.f,2.f));
+    std::ofstream out(s.settingsPath,std::ios::binary|std::ios::trunc);
+    if(out){out<<json;out.close();log::info("intel-nr",std::format("knobs written profile={} intensity={:.3f} detail={:.3f}",profile,intensity,structure));}
+    (void)tone; // tone maps to the daemon's local_tone_strength via profile; kept for future knob
+}
 void IntelNrBackend::close()noexcept{
     if(!impl_)return;auto& s=*impl_;
     s.closing=true;

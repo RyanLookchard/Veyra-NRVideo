@@ -4090,6 +4090,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
                     tracker_.transition(list,layer->proxy(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
                     proxy=layer->proxy();original=layer->input();
                 }
+                layer->intel->setKnobs(layer->model.style,layer->model.tone,layer->model.structure,layer->model.intensity);
                 if(!layer->intel->recordInputs(list,proxy,original,realFrameIndex_+1,reset||!layer->historyValid||layer->inputRevision!=1,layer->model.intensity))return false;
                 if(!submitGraph(slot)||!layer->intel->enqueue())return false;
                 list=ring_.acquireNext(slot,st);if(!list)return false;
@@ -4783,6 +4784,7 @@ bool EnhanceGraph::applySettings(const engine::EnhancementSettings& s){
                 correction.hue,correction.chroma,correction.highlight,correction.compression,correction.stability,
                 correction.neutral,correction.colorKeep,correction.lumaKeep,correction.shadow));
             layer.protection=i<desc_.nrLayersProtection.size()?desc_.nrLayersProtection[i]:s.protection;
+            if(layer.intel)layer.intel->setKnobs(layer.model.style,layer.model.tone,layer.model.structure,layer.model.intensity);
         }
         layer.temporal().reset();
         // Reset this feature and its downstream consumers after input/parameter

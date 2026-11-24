@@ -216,7 +216,7 @@ constexpr int32_t nrRenderPreset(NrRuntime runtime,const NrSettings& model) {
     return currentNrRuntime(runtime)==NrRuntime::Ampere ? (model.performance?2:1) : 0;
 }
 constexpr bool nrUsesPerformanceModel(NrRuntime runtime) {
-    return currentNrRuntime(runtime)==NrRuntime::Ampere || runtime==NrRuntime::LmxxfAmd;
+    return currentNrRuntime(runtime)==NrRuntime::Ampere || runtime==NrRuntime::LmxxfAmd || runtime==NrRuntime::IntelXmx;
 }
 constexpr int32_t nrModelSelection(NrRuntime runtime,const NrSettings& model) {
     return nrUsesPerformanceModel(runtime) ? (model.performance?2:1) : 0;

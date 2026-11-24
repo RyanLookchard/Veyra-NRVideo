@@ -22,5 +22,6 @@ bool IntelNrBackend::recordInputs(ID3D12GraphicsCommandList*,ID3D12Resource*,ID3
 bool IntelNrBackend::enqueue(){return false;}
 bool IntelNrBackend::recordOutputs(ID3D12GraphicsCommandList*,ID3D12Resource*){return false;}
 bool IntelNrBackend::retireSubmitted(){return true;}
+void IntelNrBackend::setKnobs(int,float,float,float){}
 const std::string& IntelNrBackend::error()const{return impl_->error;}
 }
