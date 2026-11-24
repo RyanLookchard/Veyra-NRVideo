@@ -180,9 +180,10 @@ bool IntelNrBackend::recordInputs(ID3D12GraphicsCommandList* list,ID3D12Resource
         s.device->CreateUnorderedAccessView(s.decoded.Get(),nullptr,&du,dc);
         s.bound=true;s.boundProxy=proxy;s.boundOriginal=original;
     }
-    // ENCODE: proxy sRGB bytes -> shared input buffer.
+    // ENCODE: proxy sRGB bytes -> shared input buffer. The graph leaves the
+    // proxy in NON_PIXEL_SHADER_RESOURCE (its own encode just read/wrote it);
+    // the shared input buffer is COMMON between frames.
     barrier(list,s.session.input,kCommon,kUav);
-    barrier(list,proxy,kCommon,kRead);
     const uint32_t pitch=s.w*4;
     float constants[8];memcpy(constants+0,&s.w,4);memcpy(constants+1,&s.h,4);memcpy(constants+2,&pitch,4);
     constants[3]=0;constants[4]=0;constants[5]=0;constants[6]=0;constants[7]=0;
@@ -190,7 +191,6 @@ bool IntelNrBackend::recordInputs(ID3D12GraphicsCommandList* list,ID3D12Resource
     s.encode.bind(list,constants,gpu.ptr,gpu.ptr+s.encode.increment);
     list->Dispatch((s.w+15)/16,(s.h+15)/16,1);
     barrier(list,s.session.input,kUav,kCommon);
-    barrier(list,proxy,kRead,kCommon);
     (void)reset; // P0: every frame is a reset, told in the FRAME packet
     s.intensity=std::clamp(intensity,0.f,1.f);
     s.prepared=true;s.enqueued=s.outputs=false;
@@ -210,14 +210,15 @@ bool IntelNrBackend::enqueue(){
 bool IntelNrBackend::recordOutputs(ID3D12GraphicsCommandList* list,ID3D12Resource* destination){
     auto& s=*impl_;if(!ready()||!s.enqueued||s.outputs||!list||!destination)return s.fail("Intel NR output without current-frame evaluation");
     barrier(list,s.decoded.Get(),kCommon,kUav);
-    barrier(list,s.boundOriginal,kCommon,kRead);
+    // The graph leaves layer->input() in NON_PIXEL_SHADER_RESOURCE after its
+    // own encode read it; do not re-transition from COMMON (invalid barrier).
     const uint32_t lo=uint32_t(s.frameValue),hi=uint32_t(s.frameValue>>32),pitch=s.w*4;
     float constants[8];memcpy(constants+0,&s.w,4);memcpy(constants+1,&s.h,4);memcpy(constants+2,&pitch,4);memcpy(constants+3,&lo,4);memcpy(constants+4,&hi,4);
     constants[5]=s.intensity;constants[6]=0;constants[7]=0;
     const auto gpu=s.compose.heap->GetGPUDescriptorHandleForHeapStart();
     s.compose.bind(list,constants,gpu.ptr,gpu.ptr+3*s.compose.increment);
     list->Dispatch((s.w+15)/16,(s.h+15)/16,1);
-    barrier(list,s.boundOriginal,kRead,kCommon);
+    // original stays in NON_PIXEL_SHADER_RESOURCE for the graph's next use.
     barrier(list,s.decoded.Get(),kUav,D3D12_RESOURCE_STATE_COPY_SOURCE);
     list->CopyResource(destination,s.decoded.Get());
     barrier(list,s.decoded.Get(),D3D12_RESOURCE_STATE_COPY_SOURCE,kCommon);
