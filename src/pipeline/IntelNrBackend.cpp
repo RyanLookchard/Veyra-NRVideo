@@ -129,10 +129,22 @@ bool IntelNrBackend::open(const std::filesystem::path& directory,ID3D12Device* d
     auto env=std::format(L"NR_GPU_IMAGE=1\0NR_GPU_TRANSPORT=1\0NR_GPU_ONLY=1\0NR_LAYER_SPAWNED={}\0NR_PRESET={}\0NR_ROOT={}\0\0",
         GetCurrentProcessId(),smallModel?L"B":L"A",directory.wstring());
     std::vector<wchar_t> envBlock(env.begin(),env.end());
+    // Capture the daemon's stdout/stderr so XMX/driver failures are diagnosable
+    // (the daemon prints its real error there; CREATE_NO_WINDOW discards it).
+    const auto logPath=directory/L"work"/L"daemon.log";
+    {std::error_code ec;std::filesystem::create_directories(directory/L"work",ec);}
+    SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};
+    HANDLE logFile=CreateFileW(logPath.c_str(),GENERIC_WRITE,FILE_SHARE_READ,&sa,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
     STARTUPINFOW startup{};startup.cb=sizeof(startup);
+    if(logFile!=INVALID_HANDLE_VALUE){
+        startup.dwFlags=STARTF_USESTDHANDLES;
+        startup.hStdOutput=logFile;startup.hStdError=logFile;
+        startup.hStdInput=GetStdHandle(STD_INPUT_HANDLE);
+    }
     PROCESS_INFORMATION process{};
-    const bool created=CreateProcessW(python.c_str(),command.data(),nullptr,nullptr,FALSE,
+    const bool created=CreateProcessW(python.c_str(),command.data(),nullptr,nullptr,TRUE,
         CREATE_NO_WINDOW|CREATE_UNICODE_ENVIRONMENT,envBlock.data(),directory.c_str(),&startup,&process)!=FALSE;
+    if(logFile!=INVALID_HANDLE_VALUE)CloseHandle(logFile);
     if(!created)return s.fail(std::format("Intel NR daemon launch failed win32={}",GetLastError()));
     s.process=process.hProcess;drop(process.hThread);
     s.job=CreateJobObjectW(nullptr,nullptr);
