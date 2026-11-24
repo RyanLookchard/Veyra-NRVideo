@@ -248,9 +248,11 @@ void IntelNrBackend::setKnobs(int style,float tone,float structure,float intensi
     if(style==s.knobsStyle&&tone==s.knobsTone&&structure==s.knobsStructure&&intensity==s.knobsIntensity)return;
     s.knobsStyle=style;s.knobsTone=tone;s.knobsStructure=structure;s.knobsIntensity=intensity;
     // The daemon's profile table: style 0/1/2 = standard/natural/cinematic.
+    // intensity stays 1.0 here: the user's strength is applied once, in the
+    // COMPOSE shader's lerp. Writing it here too would square it (0.5 -> 0.25).
     const char* profile=style==1?"natural":style==2?"cinematic":"standard";
-    const auto json=std::format("{{\"profile\":\"{}\",\"intensity\":{:.4f},\"detail_strength\":{:.4f},\"colour_strength\":1.0}}",
-        profile,std::clamp(intensity,0.f,1.f),std::clamp(structure,0.f,2.f));
+    const auto json=std::format("{{\"profile\":\"{}\",\"intensity\":1.0,\"detail_strength\":{:.4f},\"colour_strength\":1.0}}",
+        profile,std::clamp(structure,0.f,2.f));
     std::ofstream out(s.settingsPath,std::ios::binary|std::ios::trunc);
     if(out){out<<json;out.close();log::info("intel-nr",std::format("knobs written profile={} intensity={:.3f} detail={:.3f}",profile,intensity,structure));}
     (void)tone; // tone maps to the daemon's local_tone_strength via profile; kept for future knob
