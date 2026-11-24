@@ -102,7 +102,8 @@ bool exportVideo(const std::wstring& input,const std::wstring& output,PlayerOpti
         const bool nvidiaFeatures=nvidiaAdapter;
         const bool amdAdapter=ctx.adapter().vendorId==0x1002;
         const bool amdNrExport=amdAdapter&&currentNrRuntime(options.settings.nrRuntime)==NrRuntime::LmxxfAmd;
-        if(options.nr&&!nvidiaFeatures&&!amdNrExport){failureReason=L"当前设备不能执行所选 NR，请选择此显卡可用的 NR 运行库";break;}
+        const bool intelNrExport=ctx.adapter().vendorId==0x8086&&options.settings.nrRuntime==NrRuntime::IntelXmx;
+        if(options.nr&&!nvidiaFeatures&&!amdNrExport&&!intelNrExport){failureReason=L"当前设备不能执行所选 NR，请选择此显卡可用的 NR 运行库";break;}
         // One description for the whole job: the stage rules (which SR runs,
         // whether NR/FG are available) come from the same place the preview uses.
         StageRequest stages;stages.nr=options.nr;stages.sr=options.sr;stages.fg=options.fg;stages.fgMultiplier=options.fgMultiplier;
