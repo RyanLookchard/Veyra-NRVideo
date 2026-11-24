@@ -16,9 +16,13 @@ struct AVFrame;
 struct ID3D12Device;
 struct ID3D12CommandQueue;
 
-namespace veyra::pipeline { struct HardwareSurfaceInput; }
+namespace veyra::pipeline { struct ColorDescription; struct HardwareSurfaceInput; }
 
 namespace veyra::source {
+
+// Apply the capture range after decode so the graph's explicit AVFrame
+// metadata read preserves the override on subsequent color resolution.
+pipeline::ColorDescription resolveCompressedCaptureColor(AVFrame&,const pipeline::ColorDescription&,unsigned rangeOverride);
 
 class CaptureCompressedDecoder {
 public:
@@ -45,6 +49,9 @@ public:
     // the software decoder runs several low-delay threads. Capture cards keep
     // the original behaviour.
     void setStreamProfile(bool enabled);
+    // Xbox targets begin with an estimate. In this mode the decoder can resize
+    // an owned CPU target to the actual coded dimensions after the first frame.
+    void preserveSoftwareStreamExtent(bool enabled);
 
     // Streaming sources may prefer D3D11VA for H.264 as well (the HEVC stream
     // path already uses it). Intel's D3D12VA H.264 output can be silently
