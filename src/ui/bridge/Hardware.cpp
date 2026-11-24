@@ -203,6 +203,16 @@ QString disableUnavailableEffects(engine::ChainConfiguration& configuration) {
             globals.videoSrQuality = engine::kVideoSrFsr;
             veyra::log::warn("effect-availability", std::format("unavailable saved SR quality={} selected=FSR", savedSr));
         }
+        // On Intel the only NR runtime is the experimental XMX worker. Migrate
+        // the saved NVIDIA/AMD runtime to it so the NR card and its master
+        // switch stay visible even before the weights are extracted (the card
+        // then shows "extract weights first" instead of vanishing).
+        if (effectGpu().vendor == 0x8086 && caps.value("nr5").toMap().value("supported").toBool()) {
+            for (uint32_t i = 0; i < chain.nodeCount; ++i)
+                if (chain.nodes[i].type == engine::EffectType::NrEnhance &&
+                    chain.nodes[i].nr.runtime != engine::NrRuntime::IntelXmx)
+                    chain.nodes[i].nr.runtime = engine::NrRuntime::IntelXmx;
+        }
         for (uint32_t i = 0; i < chain.nodeCount; ++i) {
             auto& node = chain.nodes[i];
             QString id;

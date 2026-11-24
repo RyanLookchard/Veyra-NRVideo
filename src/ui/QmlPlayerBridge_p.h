@@ -733,7 +733,7 @@ struct QmlPlayerBridge::Impl {
                 DXGI_ADAPTER_DESC1 desc{};
                 if(FAILED(adapter->GetDesc1(&desc))||(desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE))continue;
                 auto initial=facade.pendingSettings();
-                initial.nrRuntime=desc.VendorId==0x1002?engine::NrRuntime::LmxxfAmd:engine::NrRuntime::Ampere;
+                initial.nrRuntime=desc.VendorId==0x1002?engine::NrRuntime::LmxxfAmd:desc.VendorId==0x8086?engine::NrRuntime::IntelXmx:engine::NrRuntime::Ampere;
                 if(desc.VendorId==0x1002||desc.VendorId==0x8086){
                     initial.opticalFlowBackend=engine::OpticalFlowBackend::AmdFidelityFx;
                     initial.videoSrQuality=engine::kVideoSrFsr;
