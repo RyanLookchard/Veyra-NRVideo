@@ -4,6 +4,8 @@
 #include "veyra/sink/AudioGain.h"
 #include "veyra/engine/MicrophoneCapture.h"
 #include "veyra/ui/NvidiaVrrProfileController.h"
+#include "veyra/pipeline/IntelNrBackend.h"
+#include <QTimer>
 
 namespace veyra::ui {
 namespace {bool prepareStartupPreset(const engine::PresetEntry& entry, engine::ChainSession& session,
@@ -100,6 +102,22 @@ QmlPlayerBridge::QmlPlayerBridge(engine::EngineController& engine, std::filesyst
     impl_->enumerateGpuAdapters();
     impl_->resolveGpuMonitor();
     impl_->applyComputeGpu();
+    // First-run Intel NR convenience: if the user dropped nvngx_dlssnr.dll
+    // beside the daemon and weights are missing, extract automatically once
+    // the event loop is up (no dialog). The DLL is user-supplied; weights are
+    // never shipped in the package.
+    if (primaryGpuVendor() == 0x8086) {
+        const auto nrRoot = runtime::localDataDirectory() / "intel" / "nr";
+        std::error_code ec;
+        const auto dll = (nrRoot / "nvngx_dlssnr.dll").lexically_normal();
+        if (std::filesystem::is_regular_file(dll, ec) &&
+            !pipeline::IntelNrBackend::weightsAvailable(nrRoot, true) &&
+            !pipeline::IntelNrBackend::weightsAvailable(nrRoot, false)) {
+            QTimer::singleShot(0, this, [this, dll] {
+                extractIntelNrWeights(QString::fromStdWString(dll.wstring()));
+            });
+        }
+    }
     connect(this,&QmlPlayerBridge::snapshotChanged,this,
         [this,ceiling=fgMaxMultiplier(),text=fgProviderText()]() mutable {
             const auto nextCeiling=fgMaxMultiplier();const auto nextText=fgProviderText();

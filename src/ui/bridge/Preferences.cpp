@@ -138,7 +138,18 @@ QVariantList QmlPlayerBridge::readComponentList() const {
 // --- experimental Intel XMX DLSS-NR weight extraction -----------------------
 bool QmlPlayerBridge::intelNrExtracting() const { return impl_->intelNrExtracting.load(); }
 void QmlPlayerBridge::extractIntelNrWeightsDialog() {
-    const QString path = QFileDialog::getOpenFileName(nullptr, tr("选择您自己的 nvngx_dlssnr.dll（310.8 / 310.9.16）"), QString(),
+    // Auto-detect a DLL the user already placed beside the daemon (the
+    // one-click path: drop nvngx_dlssnr.dll into runtime_local/intel/nr/).
+    const auto root = runtime::localDataDirectory() / "intel" / "nr";
+    std::error_code ec;
+    for (const auto* name : {L"nvngx_dlssnr.dll", L"../nvngx_dlssnr.dll", L"../../nvngx_dlssnr.dll"}) {
+        const auto candidate = (root / name).lexically_normal();
+        if (std::filesystem::is_regular_file(candidate, ec)) {
+            extractIntelNrWeights(QString::fromStdWString(candidate.wstring()));
+            return;
+        }
+    }
+    const QString path = QFileDialog::getOpenFileName(nullptr, tr("选择 nvngx_dlssnr.dll（310.8 / 310.9.16）"), QString(),
                                                       tr("DLSS NR 运行库 (nvngx_dlssnr.dll);;所有文件 (*.*)"));
     if (!path.isEmpty()) extractIntelNrWeights(path);
 }
