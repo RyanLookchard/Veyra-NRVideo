@@ -1545,8 +1545,10 @@ VPage {
                         VAccordion {
                             id: nrStage
                             objectName: "list-nr-stage"
-                            // No NR runtime this GPU can run: hide the whole stage.
-                            visible: Support.supported(veyra, "nr")
+                            // Visible when ANY NR runtime is supported on this GPU
+                            // (not just the currently selected one), so Intel users
+                            // see the card and can pick Intel XMX / extract weights.
+                            visible: (veyra.nrRuntimeChoices || []).length > 0
                             Layout.fillWidth: true
                             glyph: "wand"
                             hue: Theme.accent
