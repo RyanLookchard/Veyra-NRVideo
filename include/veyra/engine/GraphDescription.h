@@ -153,7 +153,7 @@ inline pipeline::ResolutionPlan describeStages(const StageRequest& request,const
     const bool nativeVideoRestore=request.sr&&!request.stillImage&&!request.uncompressedSource&&request.nvidiaAdapter&&
         ngxVideoSr(settings.videoSrQuality);
     desc.enableSr=(plan.srApplied||nativeVideoRestore)&&(request.nvidiaAdapter||settings.videoSrQuality==kVideoSrFsr||settings.videoSrQuality==kVideoSrXess);
-    desc.enableNr=request.nr&&(request.nvidiaAdapter||request.amdNr)&&(!settings.nrLayerCount||settings.activeNrLayerCount()>0);
+    desc.enableNr=request.nr&&(request.nvidiaAdapter||request.amdNr||settings.nrRuntime==NrRuntime::IntelXmx)&&(!settings.nrLayerCount||settings.activeNrLayerCount()>0);
     desc.nrBeforeSr=!request.stillImage&&!request.exportJob&&lowLatency&&desc.enableNr&&desc.enableSr;
     desc.enableNvofStandalone=desc.enableNr;
     const bool temporalMotion=settings.usesNrTemporal();

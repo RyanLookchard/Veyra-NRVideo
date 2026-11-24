@@ -1501,6 +1501,12 @@ public:
     Q_INVOKABLE void copyDiagnostics();
     // Re-reads the runtime manifest (Settings → 组件与许可 calls it when shown).
     Q_INVOKABLE void refreshComponentList();
+    // Experimental Intel XMX DLSS-NR: extract weights from the user's own
+    // nvngx_dlssnr.dll into runtime_local/intel/nr/work/mlxw (never shipped).
+    Q_INVOKABLE void extractIntelNrWeightsDialog();
+    Q_INVOKABLE bool extractIntelNrWeights(const QString& dllPath);
+    Q_PROPERTY(bool intelNrExtracting READ intelNrExtracting NOTIFY intelNrExtractingChanged)
+    bool intelNrExtracting() const;
 
     void showFormatBadge(const engine::PlayerSnapshot& snapshot);
 
@@ -1541,6 +1547,7 @@ signals:
     // bindings do not re-evaluate 60 times a second for nothing.
     void snapshotChanged();
     void componentListChanged();
+    void intelNrExtractingChanged();
     void perfChanged();
     void protectionDrawChanged();
     void presentationChanged();

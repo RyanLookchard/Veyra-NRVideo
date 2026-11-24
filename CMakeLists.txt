@@ -286,6 +286,8 @@ target_link_libraries(veyra_runtime_probe PRIVATE veyra_gfx)
 veyra_add_compute_shader(veyra_shader_parity_encode ParityEncode)
 veyra_add_compute_shader(veyra_shader_parity_decode ParityDecode)
 veyra_add_compute_shader(veyra_shader_rdna3_nr_decode Rdna3NrDecode)
+veyra_add_compute_shader_variant(veyra_shader_intel_nr_encode IntelNrCopy IntelNrEncode ENCODE)
+veyra_add_compute_shader_variant(veyra_shader_intel_nr_compose IntelNrCopy IntelNrCompose COMPOSE)
 veyra_add_compute_shader(veyra_shader_hdr_video_sr HdrVideoSrRestore)
 veyra_add_compute_shader(veyra_shader_sr_resolve SrResolve)
 veyra_add_compute_shader(veyra_shader_hdr_amd_nr_encode HdrAmdNrEncode)
@@ -455,6 +457,7 @@ add_library(veyra_pipeline STATIC
   src/pipeline/AmdHipPreflight.cpp
   src/pipeline/LmxxfNrBackend.cpp
   src/pipeline/Rdna3NrBackend.cpp
+  src/pipeline/IntelNrBackend.cpp
   src/pipeline/VfgBackend.cpp
   src/pipeline/VfgAmpereCompat.cpp
   src/pipeline/VfxSrBackend.cpp
@@ -467,6 +470,7 @@ target_compile_definitions(veyra_pipeline PUBLIC
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
   VEYRA_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
 target_include_directories(veyra_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(veyra_pipeline PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party_local/intel/nr-protocol)
 set(VEYRA_CUDA_DRIVER_INCLUDE_DIR "" CACHE PATH "External CUDA driver headers for native VFG (never vendored)")
 if(EXISTS "${VEYRA_CUDA_DRIVER_INCLUDE_DIR}/cuda.h")
   target_include_directories(veyra_pipeline PRIVATE "${VEYRA_CUDA_DRIVER_INCLUDE_DIR}")
@@ -474,6 +478,7 @@ if(EXISTS "${VEYRA_CUDA_DRIVER_INCLUDE_DIR}/cuda.h")
 endif()
 target_link_libraries(veyra_pipeline PUBLIC veyra_base veyra_gfx d3d12 dxgi dxguid d3dcompiler)
 add_dependencies(veyra_pipeline veyra_shader_rdna3_nr_decode)
+add_dependencies(veyra_pipeline veyra_shader_intel_nr_encode veyra_shader_intel_nr_compose)
 
 # Optional independent RX7000 network worker. All third-party source and runtime
 # assets remain external; only our host and reproducible preparation script live here.

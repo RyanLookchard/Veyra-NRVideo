@@ -15,10 +15,12 @@ constexpr const wchar_t* ngxFailureHint(uint64_t result) {
 // amdNr: the adapter is AMD, where NR runs on the lmxxf runtime (the graph
 // selects it for every NR layer; an unsupported RX model fails in its own
 // open/admits and is reported like any other NR backend failure).
-inline bool disableUnsupportedNvidiaEffects(EnhancementSettings& settings,bool nvidia,bool amdNr=false){
+// intelNr: the adapter is Intel; NR survives only on the experimental XMX
+// runtime (the daemon worker), every other NR runtime is NGX-only.
+inline bool disableUnsupportedNvidiaEffects(EnhancementSettings& settings,bool nvidia,bool amdNr=false,bool intelNr=false){
     if(nvidia)return false;
     const auto before=settings;
-    if(!amdNr)settings.nr=false;
+    if(!amdNr&&!(intelNr&&settings.nrRuntime==NrRuntime::IntelXmx))settings.nr=false;
     // NVOF does not exist on these adapters; every non-NVIDIA vendor (AMD NR
     // motion, Intel SR/FG guidance) uses the cross-vendor FidelityFX flow.
     if(settings.opticalFlowBackend==OpticalFlowBackend::Nvidia)
@@ -36,8 +38,8 @@ inline bool disableUnsupportedNvidiaEffects(EnhancementSettings& settings,bool n
 // A stage that only an NVIDIA adapter can run is still requested: NR outside
 // the AMD runtime, SR other than FSR, and frame generation other than the
 // cross-vendor XeSS/FSR providers.
-inline bool nvidiaOnlyStagesRequested(bool nr,bool sr,bool fg,const EnhancementSettings& settings,bool amdNr){
-    return (nr&&!amdNr)||(sr&&settings.videoSrQuality!=kVideoSrFsr&&settings.videoSrQuality!=kVideoSrXess)||
+inline bool nvidiaOnlyStagesRequested(bool nr,bool sr,bool fg,const EnhancementSettings& settings,bool amdNr,bool intelNr=false){
+    return (nr&&!amdNr&&!(intelNr&&settings.nrRuntime==NrRuntime::IntelXmx))||(sr&&settings.videoSrQuality!=kVideoSrFsr&&settings.videoSrQuality!=kVideoSrXess)||
         (fg&&!crossVendorFrameGeneration(settings.frameGenerationBackend));
 }
 inline const wchar_t* backendFailureName(FailedBackend backend) {

@@ -143,10 +143,11 @@ constexpr std::wstring_view captureAudioIngressName(CaptureAudioIngress mode) {
 }
 // Keep retired 0/1 IDs decodable; new builds migrate them to the SF slot.
 // 3 remains the explicitly selected NVIDIA original, 4 the AMD backend.
-enum class NrRuntime { Original = 0, Community = 1, Ampere = 2, NvidiaOriginal = 3, LmxxfAmd = 4 };
+enum class NrRuntime { Original = 0, Community = 1, Ampere = 2, NvidiaOriginal = 3, LmxxfAmd = 4, IntelXmx = 5 };
 constexpr bool validNrRuntime(NrRuntime runtime) {
     return runtime == NrRuntime::Original || runtime == NrRuntime::Community ||
-           runtime == NrRuntime::Ampere || runtime == NrRuntime::NvidiaOriginal || runtime == NrRuntime::LmxxfAmd;
+           runtime == NrRuntime::Ampere || runtime == NrRuntime::NvidiaOriginal || runtime == NrRuntime::LmxxfAmd ||
+           runtime == NrRuntime::IntelXmx;
 }
 // Lecram and the older RTX40 community DLL are no longer packaged. Explicit
 // NVIDIA-original and AMD choices survive migration; no DLL hash loading lock.
@@ -160,6 +161,7 @@ constexpr std::string_view nrRuntimeName(NrRuntime runtime) {
     case NrRuntime::Ampere:return "community-SF-RTX20-RTX50";
     case NrRuntime::NvidiaOriginal:return "NVIDIA-original-RTX50-310.8.0";
     case NrRuntime::LmxxfAmd:return "AMD-NR-auto"; // persisted legacy ID4, RX7000/9000 providers route by actual adapter
+    case NrRuntime::IntelXmx:return "Intel-XMX-DLSSNR-experimental";
     }
     return "unknown";
 }

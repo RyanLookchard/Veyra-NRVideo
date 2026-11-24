@@ -9,6 +9,7 @@
 // ring (NR evaluates on a fresh list - snippet constraint).
 #include "veyra/pipeline/EnhanceGraph.h"
 #include "veyra/pipeline/Rdna3NrBackend.h"
+#include "veyra/pipeline/IntelNrBackend.h"
 #include "veyra/pipeline/AmdNrProvider.h"
 #include "veyra/pipeline/VfgBackend.h"
 #include "veyra/engine/GraphDescription.h"
@@ -770,11 +771,12 @@ bool EnhanceGraph::initialize(const EnhanceGraphDesc& desc)
     const bool videoRestore=!desc.stillImage&&desc.videoSrQuality>=1&&desc.videoSrQuality<=4;
     srEnabled_ = desc.enableSr && (srcW_ != workW_ || srcH_ != workH_ || videoRestore || srPrescaleActive() || srResolveActive());
     lmxxfNr_ = context_.adapter().vendorId == 0x1002 || desc.nrRuntime == engine::NrRuntime::LmxxfAmd;
+    intelNr_ = context_.adapter().vendorId == 0x8086 && desc.nrRuntime == engine::NrRuntime::IntelXmx;
     // NVOF only exists on NVIDIA adapters; every other vendor (AMD, Intel)
     // resolves a requested NVOF backend to the cross-vendor FidelityFX flow.
     if(context_.adapter().vendorId!=0x10DE && desc_.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia)
         desc_.opticalFlowBackend=engine::OpticalFlowBackend::AmdFidelityFx;
-    nrEnabled_ = desc.enableNr && !desc.noFeatures && (!desc.noNgx || lmxxfNr_);
+    nrEnabled_ = desc.enableNr && !desc.noFeatures && (!desc.noNgx || lmxxfNr_ || intelNr_);
     fgEnabled_ = desc.enableFg && !desc.noFeatures && !desc.stillImage &&
         desc.frameGenerationBackend != engine::FrameGenerationBackend::XeSS &&
         (!desc.noNgx || engine::fsrFrameGeneration(desc.frameGenerationBackend)||desc.frameGenerationBackend==engine::FrameGenerationBackend::Vfg||desc.frameGenerationBackend==engine::FrameGenerationBackend::Anr||
@@ -1665,13 +1667,13 @@ bool EnhanceGraph::initNgxFeatures()
         if(!coreCache_->prepare(std::move(key),enabled))return false;
     }
     if(desc_.convertVideoHdr()&&(desc_.noNgx||desc_.noFeatures)){failedBackend_=engine::FailedBackend::VideoHdr;return false;}
-    if ((desc_.noNgx && !lmxxfNr_ && !anr) || desc_.noFeatures || (!nrEnabled_&&!srEnabled_&&!fgEnabled_&&!desc_.convertVideoHdr()&&!dlaaRequested())) {
+    if ((desc_.noNgx && !lmxxfNr_ && !intelNr_ && !anr) || desc_.noFeatures || (!nrEnabled_&&!srEnabled_&&!fgEnabled_&&!desc_.convertVideoHdr()&&!dlaaRequested())) {
         veyra::log::info("graph", "NGX core/features skipped by disabled-feature configuration");
         return true;
     }
     // FSR upscaling is a FidelityFX effect: a session whose only feature is
     // FSR SR must not require (or fail on) the NGX core.
-    const bool needNgxCore = (nrEnabled_ && !lmxxfNr_) || (fgEnabled_ && !fsrEnabled() && !vfgBackend_ && !anr && !amfFrc_) || desc_.convertVideoHdr() ||
+    const bool needNgxCore = (nrEnabled_ && !lmxxfNr_ && !intelNr_) || (fgEnabled_ && !fsrEnabled() && !vfgBackend_ && !anr && !amfFrc_) || desc_.convertVideoHdr() ||
         (srEnabled_ && (desc_.finalSrQuality()==0 || desc_.firstSrRuns(0) || ngxVideoSrPass(desc_))) || dlaaRequested();
     if (!needNgxCore) {
         veyra::log::info("graph", "NGX core skipped: lmxxf NR / AMD FSR stages use their own runtimes");
@@ -1789,7 +1791,7 @@ bool EnhanceGraph::initNgxFeatures()
         if(desc_.enableFg&&(desc_.fgMultiplier<2||desc_.fgMultiplier>6||(aboveCapability&&!forceAboveCapability))){veyra::log::error("graph",std::format("requested MFG multiplier unsupported request={} maxGeneratedFrames={}",desc_.fgMultiplier,fgCaps.multiFrameCountMax));return false;}
     }
 
-    if(nrEnabled_ && !lmxxfNr_){
+    if(nrEnabled_ && !lmxxfNr_ && !intelNr_){
     failedBackend_=engine::FailedBackend::Nr;
     if(!engine::validNrRuntime(desc_.nrRuntime))return false;
     const auto selectedNr=engine::currentNrRuntime(desc_.nrRuntime);
@@ -1883,6 +1885,17 @@ bool EnhanceGraph::initNgxFeatures()
                 }
                 if(!instance->amd->admits(extent.width,extent.height))return false;
             }
+            if(intelNr_){
+                failedBackend_=engine::FailedBackend::Nr;
+                // Same linear-SDR upstream contract as the AMD route: HDR uses
+                // the bounded proxy and restores its delta over the HDR base.
+                if(desc_.hdrWorking()&&!instance->createAmdHdrProxy(context_.device()))return false;
+                auto backend=std::make_unique<IntelNrBackend>();
+                const auto directory=std::filesystem::path(desc_.runtimeAbsPath)/L".."/L"intel"/L"nr";
+                if(!backend->open(directory.lexically_normal(),context_.device(),ring_.queue(),extent.width,extent.height,instance->model.performance))return false;
+                instance->intel=std::move(backend);
+                if(!instance->intel->admits(extent.width,extent.height))return false;
+            }
             veyra::log::info("resolution",std::format("NR layer={} internal={}x{} composite={}x{} sharedMotion={}",
                 index+1,extent.width,extent.height,fullW,fullH,motion!=nullptr));
             nrInstances_.push_back(std::move(instance));
@@ -1891,7 +1904,7 @@ bool EnhanceGraph::initNgxFeatures()
     }
 
     // NR feature create (8.5 create parameter contract), one handle per layer.
-    for (size_t layerIndex = 0; nrEnabled_ && !lmxxfNr_ && layerIndex < nrInstances_.size(); ++layerIndex) {
+    for (size_t layerIndex = 0; nrEnabled_ && !lmxxfNr_ && !intelNr_ && layerIndex < nrInstances_.size(); ++layerIndex) {
         auto* layer = nrInstances_[layerIndex].get();
         if(!createNrFeature(*layer))return false;
     }
@@ -2088,7 +2101,7 @@ bool EnhanceGraph::createAutoNrPool() {
         failedBackend_=engine::FailedBackend::Nr;log::warn("nr-auto-pool","test-only API refusal; no allocation or pressure injected");return false;
     }
     const auto index=*desc_.nrAutoPoolLayer;
-    const bool admitted=nrEnabled_&&!srEnabled_&&!fgEnabled_&&!lmxxfNr_&&!desc_.hdrWorking()&&!desc_.stillImage&&
+    const bool admitted=nrEnabled_&&!srEnabled_&&!fgEnabled_&&!lmxxfNr_&&!intelNr_&&!desc_.hdrWorking()&&!desc_.stillImage&&
         !desc_.noFeatures&&!desc_.noNgx&&!desc_.runtimeNodeOrder&&!desc_.nrTemporal&&desc_.nrHoldStrength==0&&
         engine::currentNrRuntime(desc_.nrRuntime)==engine::NrRuntime::Ampere&&desc_.opticalFlowBackend==engine::OpticalFlowBackend::Nvidia&&
         context_.adapter().deviceId==0x2f04&&context_.adapter().isNvidia&&index<nrInstances_.size()&&nrInstances_.size()+4<=8&&
@@ -2177,8 +2190,8 @@ std::string EnhanceGraph::nrReuseIneligibility() const
     if(!desc_.nrReusePreview)return "not a realtime preview graph";
     if(desc_.stillImage)return "still image";
     if(!nrEnabled_||!nrCreated())return "NR not created";
-    if(lmxxfNr_||!context_.adapter().isNvidia)return "NVIDIA NGX NR only";
-    for(const auto& layer:nrInstances_)if(layer->amd||layer->handle()==nullptr)return "NVIDIA NGX NR only";
+    if(lmxxfNr_||intelNr_||!context_.adapter().isNvidia)return "NVIDIA NGX NR only";
+    for(const auto& layer:nrInstances_)if(layer->amd||layer->intel||layer->handle()==nullptr)return "NVIDIA NGX NR only";
     if(desc_.hdrWorking())return "SDR only";
     if(!desc_.nrUsesFlow()||!nvofStandalone_)return "NR motion must use optical flow";
     if(desc_.splitNrAcrossSr())return "NR split across SR";
@@ -2284,7 +2297,7 @@ bool EnhanceGraph::createComputePasses()
     const UINT nrLayerSlots = UINT(std::max<size_t>(1, nrInstances_.size()));
     if (!encPass_.loadShader("ParityEncode.dxil", cs) || !encPass_.create(context_.device(), cs, 2 * nrLayerSlots, nrLayerSlots, nrLayerSlots)) return false;
     if (!decPass_.loadShader("ParityDecode.dxil", cs) || !decPass_.create(context_.device(), cs, 4 * nrLayerSlots, 3 * nrLayerSlots, nrLayerSlots)) return false;
-    if(lmxxfNr_&&desc_.hdrWorking()&&!nrInstances_.empty()){
+    if((lmxxfNr_||intelNr_)&&desc_.hdrWorking()&&!nrInstances_.empty()){
         if(!amdHdrEncodePass_.loadShader("HdrAmdNrEncode.dxil",cs)||!amdHdrEncodePass_.create(context_.device(),cs,2*nrLayerSlots,1,1))return false;
         if(!amdHdrRestorePass_.loadShader("HdrAmdNrRestore.dxil",cs)||!amdHdrRestorePass_.create(context_.device(),cs,4*nrLayerSlots,3,1))return false;
     }
@@ -2309,7 +2322,10 @@ bool EnhanceGraph::createComputePasses()
 
 bool EnhanceGraph::submitGraph(uint32_t slot) {
     if(!ring_.submitAndSignal(slot))return false;
-    for(auto& layer:nrInstances_)if(layer->amd && !layer->amd->retireSubmitted()) { failedBackend_=engine::FailedBackend::Nr; return false; }
+    for(auto& layer:nrInstances_){
+        if(layer->amd && !layer->amd->retireSubmitted()) { failedBackend_=engine::FailedBackend::Nr; return false; }
+        if(layer->intel && !layer->intel->retireSubmitted()) { failedBackend_=engine::FailedBackend::Nr; return false; }
+    }
     return true;
 }
 
@@ -2899,7 +2915,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
     // This narrower path only handles repeated edits of the SAME paused
     // frame, after one complete reset evaluation under this configuration.
     const bool pausedEligible=pausedResidualRefresh&&reset&&context_.adapter().isNvidia&&nrEnabled_&&nrInstances_.size()==1&&
-        !nrInstances_[0]->temporalEnabled&&!nrInstances_[0]->stabilised&&!lmxxfNr_&&
+        !nrInstances_[0]->temporalEnabled&&!nrInstances_[0]->stabilised&&!lmxxfNr_&&!intelNr_&&
         desc_.nrRuntime==engine::NrRuntime::Original&&!desc_.enableSr&&!desc_.enableFg&&
         !srEnabled_&&!fgEnabled_&&!desc_.videoHdr.enabled&&!desc_.hdrInput&&!desc_.hdrOutput&&
         !colorGradeActive()&&!tailColorActiveCount_&&!preNrColorActiveCount_&&
@@ -3897,7 +3913,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         auto* layer=nrInstances_[layerIndex].get();
         // AMD owns a ready lmxxf context rather than an NGX feature handle.
         // Skipping this pass leaves the downstream fullTarget unwritten.
-        if((layer->handle()==nullptr&&(!layer->amd||!layer->amd->ready()))||!layer->enabled)return;
+        if((layer->handle()==nullptr&&(!layer->amd||!layer->amd->ready())&&(!layer->intel||!layer->intel->ready()))||!layer->enabled)return;
         const bool temporallyStabilised=layer->stabilised;
         ID3D12Resource* destination=temporallyStabilised?layer->temporal().raw():layer->fullTarget();
         const auto& r=layer->residualSettings;
@@ -3962,7 +3978,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
             }
             auto* layer = nrInstances_[layerIndex].get();
             const uint32_t sourceW=layer->fullWidth(),sourceH=layer->fullHeight();
-            if ((layer->handle() == nullptr && !layer->amd) || !layer->enabled) continue;
+            if ((layer->handle() == nullptr && !layer->amd && !layer->intel) || !layer->enabled) continue;
             if(size_t(layerIndex)<interNrPasses_.size()&&!interNrPasses_[layerIndex].empty()){
                 if(!dispatchSlotPasses(list,interNrPasses_[layerIndex],slot,"inter-NR",!interNrColorExecutionLogged_,reset))return false;
                 if(desc_.stageMark)desc_.stageMark("inter-nr-color");
@@ -3985,7 +4001,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
                     tracker_.uavBarrier(list, layer->input());
                     tracker_.transition(list, layer->input(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
                 }
-                if(!lmxxfNr_){
+                if(!lmxxfNr_&&!intelNr_){
                 tracker_.transition(list, layer->proxy(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                 const float constants[8] = {1.0f, 1.0f, 1.0f, desc_.hdrWorking() ? 1.0f : 0.0f,
                     uintBits(nrW), uintBits(nrH), 0.0f, 0.0f};
@@ -4036,6 +4052,61 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
                     veyra::log::info("amd-nr",std::format("layer={} linear output recorded; shared residual/temporal composite enabled input={}x{} target={}x{}",layerIndex+1,nrW,nrH,sourceW,sourceH));
                 if(hdr&&(reset||!layer->historyValid))
                     veyra::log::info("amd-nr-hdr",std::format("layer={} route=native-HDR->SDR-linear-proxy->AMD-NR->HDR-delta-restore referenceWhiteNits=203 input={}x{}; model inference is SDR, HDR base retained",layerIndex+1,nrW,nrH));
+                gpuTimer_.mark(list,GpuStage::Nr,true);
+                gpuTimer_.mark(list,diagnostics::nrLayerStage(unsigned(layerIndex)),true);
+                ++metrics_.nrEvaluateCount;layer->historyValid=true;layer->inputRevision=1;
+                if(layerIndex+1<nrInstances_.size())compositeNrLayer(layerIndex);
+                if(desc_.splitNrAcrossSr()&&desc_.stageMark)desc_.stageMark("nr-layer");
+                failedBackend_=engine::FailedBackend::None;
+                continue;
+            }
+
+            if(layer->intel){
+                failedBackend_=engine::FailedBackend::Nr;
+                gpuTimer_.mark(list,GpuStage::Nr);
+                gpuTimer_.mark(list,diagnostics::nrLayerStage(unsigned(layerIndex)));
+                const bool hdr=layer->amdHdrProxy()!=nullptr;
+                // The wire carries sRGB proxy bytes; build the parity proxy at
+                // the internal extent (the graph skipped its own encode for the
+                // worker runtimes). HDR uses the bounded AMD-style proxy.
+                ID3D12Resource* proxy=nullptr;ID3D12Resource* original=nullptr;
+                if(hdr){
+                    const float dimensions[8]={uintBits(nrW),uintBits(nrH),0,0,0,0,0,0};
+                    tracker_.transition(list,layer->amdHdrProxy(),D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                    amdHdrEncodePass_.bind(list,dimensions,gpuHandleOf(amdHdrEncodePass_,2*UINT(layerIndex)).ptr,gpuHandleOf(amdHdrEncodePass_,2*UINT(layerIndex)+1).ptr);
+                    list->Dispatch((nrW+15)/16,(nrH+15)/16,1);
+                    tracker_.uavBarrier(list,layer->amdHdrProxy());
+                    tracker_.transition(list,layer->amdHdrProxy(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                    proxy=layer->amdHdrProxy();original=layer->input();
+                }else{
+                    tracker_.transition(list,layer->proxy(),D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                    const float constants[8]={1.0f,1.0f,1.0f,0.0f,uintBits(nrW),uintBits(nrH),0.0f,0.0f};
+                    {
+                        const UINT layers=UINT(std::max<size_t>(1,nrInstances_.size()));
+                        encPass_.bind(list,constants,gpuHandleOf(encPass_,UINT(layerIndex)).ptr,gpuHandleOf(encPass_,layers+UINT(layerIndex)).ptr);
+                    }
+                    list->Dispatch((nrW+15)/16,(nrH+15)/16,1);
+                    tracker_.uavBarrier(list,layer->proxy());
+                    tracker_.transition(list,layer->proxy(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                    proxy=layer->proxy();original=layer->input();
+                }
+                if(!layer->intel->recordInputs(list,proxy,original,realFrameIndex_+1,reset||!layer->historyValid||layer->inputRevision!=1,layer->model.intensity))return false;
+                if(!submitGraph(slot)||!layer->intel->enqueue())return false;
+                list=ring_.acquireNext(slot,st);if(!list)return false;
+                auto* neuralOutput=hdr?layer->amdHdrNeural():layer->finalRgba();
+                tracker_.transition(list,neuralOutput,D3D12_RESOURCE_STATE_COPY_DEST);
+                if(!layer->intel->recordOutputs(list,neuralOutput))return false;
+                if(hdr){
+                    const float dimensions[8]={uintBits(nrW),uintBits(nrH),0,0,0,0,0,0};
+                    tracker_.transition(list,neuralOutput,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                    tracker_.transition(list,layer->finalRgba(),D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                    amdHdrRestorePass_.bind(list,dimensions,gpuHandleOf(amdHdrRestorePass_,4*UINT(layerIndex)).ptr,gpuHandleOf(amdHdrRestorePass_,4*UINT(layerIndex)+3).ptr);
+                    list->Dispatch((nrW+15)/16,(nrH+15)/16,1);
+                    tracker_.uavBarrier(list,layer->finalRgba());
+                }
+                tracker_.transition(list,layer->finalRgba(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                if(reset||!layer->historyValid)
+                    veyra::log::info("intel-nr",std::format("layer={} linear output recorded; shared residual/temporal composite enabled input={}x{} target={}x{}",layerIndex+1,nrW,nrH,sourceW,sourceH));
                 gpuTimer_.mark(list,GpuStage::Nr,true);
                 gpuTimer_.mark(list,diagnostics::nrLayerStage(unsigned(layerIndex)),true);
                 ++metrics_.nrEvaluateCount;layer->historyValid=true;layer->inputRevision=1;
@@ -4809,6 +4880,7 @@ void EnhanceGraph::shutdown()
     // same session, so the order is simply back-to-front of creation.
     for(auto& layer:nrInstances_){
         layer->amd.reset(); // drain HIP while the borrowed graph input/queue still exist
+        layer->intel.reset(); // stop the NR daemon while the shared queue still exists
         if(layer->handle()==nullptr)continue;
         uint64_t layerResult=0;uint32_t layerSeh=0;
         const bool safe=nrAdapter_->snippetReleaseFeature(layer->handle(),layerResult,layerSeh);

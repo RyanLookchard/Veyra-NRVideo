@@ -695,7 +695,7 @@ public:
     };
     const Metrics& metrics() const { return metrics_; }
     const std::string& mvecSource() const { return mvecSource_; }
-    bool nrCreated() const { return !nrInstances_.empty() && (nrInstances_.front()->handle() != nullptr || (nrInstances_.front()->amd && nrInstances_.front()->amd->ready())); }
+    bool nrCreated() const { return !nrInstances_.empty() && (nrInstances_.front()->handle() != nullptr || (nrInstances_.front()->amd && nrInstances_.front()->amd->ready()) || (nrInstances_.front()->intel && nrInstances_.front()->intel->ready())); }
     bool initialized() const { return initialized_; }
     uint32_t sourceWidth() const { return srcW_; }
     uint32_t sourceHeight() const { return srcH_; }
@@ -959,6 +959,7 @@ private:
     bool createNrFeature(NrInstance& layer);
     bool createAutoNrPool();
     bool lmxxfNr_ = false;
+    bool intelNr_ = false;
     bool submitGraph(uint32_t slot);
     // The layer count the current graph was built with, so a settings change
     // that adds or removes a layer is detected as a rebuild.

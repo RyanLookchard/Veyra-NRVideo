@@ -10,6 +10,7 @@
 #include "veyra/pipeline/GpuPassUtils.h"
 #include "veyra/pipeline/NrTemporalPass.h"
 #include "veyra/pipeline/LmxxfNrBackend.h"
+#include "veyra/pipeline/IntelNrBackend.h"
 #include "veyra/engine/EnhancementSettings.h"
 
 #include <memory>
@@ -91,6 +92,7 @@ public:
     bool stabilised = false;
     bool enabled = true;
     std::unique_ptr<AmdNrBackend> amd;
+    std::unique_ptr<IntelNrBackend> intel;
     // Bumped when an upstream layer's settings or output change. A layer whose
     // input revision moved drops its history, the same contract Magpie's
     // inputRevision enforces between passes.

@@ -3,6 +3,9 @@
 #include "veyra/ngx/AnrProvider.h"
 #include "veyra/gfx/AmfFrcBackend.h"
 #include "veyra/ui/UpdateChecker.h"
+#include <QFileDialog>
+#include <QPointer>
+#include <thread>
 
 namespace veyra::ui {
 // --- shell preferences -------------------------------------------------------
@@ -129,6 +132,69 @@ QVariantList QmlPlayerBridge::readComponentList() const {
         if (!item["name"].toString().isEmpty()) out << item;
     }
     return out;
+}
+
+// --- experimental Intel XMX DLSS-NR weight extraction -----------------------
+bool QmlPlayerBridge::intelNrExtracting() const { return impl_->intelNrExtracting.load(); }
+void QmlPlayerBridge::extractIntelNrWeightsDialog() {
+    const QString path = QFileDialog::getOpenFileName(nullptr, tr("选择您自己的 nvngx_dlssnr.dll（310.8 / 310.9.16）"), QString(),
+                                                      tr("DLSS NR 运行库 (nvngx_dlssnr.dll);;所有文件 (*.*)"));
+    if (!path.isEmpty()) extractIntelNrWeights(path);
+}
+bool QmlPlayerBridge::extractIntelNrWeights(const QString& dllPath) {
+    if (impl_->intelNrExtracting.load()) { emit notice(tr("Intel NR 权重正在提取中"), false); return false; }
+    const auto root = runtime::localDataDirectory() / "intel" / "nr";
+    const auto python = root / "python" / "python.exe";
+    const auto unpack = root / "src" / "tools" / "unpack_preset.py";
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(python, ec) || !std::filesystem::is_regular_file(unpack, ec)) {
+        emit notice(tr("当前包缺少 Intel NR 运行组件（python/ 与 src/tools/）"), true); return false;
+    }
+    if (!std::filesystem::is_regular_file(std::filesystem::path(dllPath.toStdWString()), ec)) {
+        emit notice(tr("所选 DLL 不存在"), true); return false;
+    }
+    const auto outDir = root / "work" / "mlxw";
+    std::filesystem::create_directories(outDir, ec);
+    impl_->intelNrExtracting = true;
+    emit intelNrExtractingChanged();
+    emit notice(tr("开始提取 Intel NR 权重（A/B 两个网络，可能需要几分钟）…"), false);
+    // The extractor is the upstream MLX-DLSS-driven tool; it only reads the
+    // user's own DLL and writes safetensors under work/mlxw. Run it off the UI
+    // thread; the daemon picks the weights up on its next start.
+    const auto dll = std::filesystem::path(dllPath.toStdWString());
+    // The worker outlives the call; guard the queued completion against the
+    // bridge being destroyed mid-extraction (QPointer nulls on delete).
+    QPointer<QmlPlayerBridge> self(this);
+    std::thread([self, root, python, unpack, dll, outDir] {
+        auto run = [&](const wchar_t* preset, const wchar_t* out) {
+            auto command = std::format(L"\"{}\" -X utf8 -B \"{}\" \"{}\" \"{}\" --preset {}",
+                python.wstring(), unpack.wstring(), dll.wstring(), (outDir / out).wstring(), preset);
+            STARTUPINFOW si{}; si.cb = sizeof(si);
+            PROCESS_INFORMATION pi{};
+            if (!CreateProcessW(python.c_str(), command.data(), nullptr, nullptr, FALSE,
+                                CREATE_NO_WINDOW, nullptr, root.c_str(), &si, &pi))
+                return false;
+            CloseHandle(pi.hThread);
+            WaitForSingleObject(pi.hProcess, 600000);
+            DWORD code = 1; GetExitCodeProcess(pi.hProcess, &code);
+            CloseHandle(pi.hProcess);
+            return code == 0;
+        };
+        const bool a = run(L"A", L"dlssnr-logical.safetensors");
+        const bool b = run(L"B", L"dlssnr-b-logical.safetensors");
+        const bool ok = a || b;
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, ok, a, b] {
+            if (!self) return;
+            self->impl_->intelNrExtracting = false;
+            emit self->intelNrExtractingChanged();
+            self->refreshComponentList();
+            if (ok) emit self->notice(self->tr("Intel NR 权重提取完成（%1）。在 NR 版本里选择 Intel XMX 即可使用")
+                .arg(QString::fromUtf8(a && b ? "A/B" : a ? "仅 A" : "仅 B")), false);
+            else emit self->notice(self->tr("Intel NR 权重提取失败：请确认 DLL 为 310.8 / 310.9.16 原版，详见后台日志"), true);
+        }, Qt::QueuedConnection);
+    }).detach();
+    return true;
 }
 
 void QmlPlayerBridge::openProjectPage() {

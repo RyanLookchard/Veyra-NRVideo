@@ -1367,6 +1367,18 @@ VPage {
                             }
                         }
                     }
+                    VGroup {
+                        visible: (veyra.effectCapabilities.nr5 || {}).supported === true
+                        VRow {
+                            label: qsTr("Intel XMX DLSS-NR（实验）")
+                            hint: qsTr("仅 Intel Arc（XMX）。网络权重不随包分发：选择您自己的 nvngx_dlssnr.dll（310.8 / 310.9.16，霍格沃茨之遗或 NBA 2K27 携带）提取 A/B 两个网络。提取后在 NR 版本里选择 Intel XMX。")
+                            VButton {
+                                text: veyra.intelNrExtracting ? qsTr("提取中…") : qsTr("选择 DLL 并提取权重")
+                                enabled: !veyra.intelNrExtracting
+                                onClicked: veyra.extractIntelNrWeightsDialog()
+                            }
+                        }
+                    }
                 }
 
                 // --- 关于 ------------------------------------------------

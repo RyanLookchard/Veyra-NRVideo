@@ -1,6 +1,7 @@
 // QML bridge: Hardware responsibilities.
 #include "../QmlPlayerBridge_p.h"
 #include "veyra/pipeline/Rdna3NrBackend.h"
+#include "veyra/pipeline/IntelNrBackend.h"
 #include "veyra/pipeline/AmdNrProvider.h"
 #include "veyra/pipeline/VfxSrBackend.h"
 #include "veyra/ngx/AnrProvider.h"
@@ -95,6 +96,16 @@ static QVariantMap scanEffectCapabilities() {
     const bool amdNrFiles=gpu.rx7000?pipeline::Rdna3NrBackend::runtimeAvailable(rdna3Directory):exists(nr / "../amd-nr/LmxxfNrRuntime.dll");
     add("nr4", H::AmdNr, amdNrFiles, QObject::tr("需要 AMD RX 7000 / 9000"));
     if(gpu.rx7000&&!amdNrFiles){auto cap=out.value("nr4").toMap();cap["reason"]=QObject::tr("当前包缺少 RX 7000 NR 运行组件");out["nr4"]=cap;}
+    // Experimental Intel XMX DLSS-NR: the daemon subset plus extracted weights.
+    // Only Intel adapters ever see it; the weights come from the user's own DLL.
+    {
+        const auto intelNrDirectory=(data/"intel"/"nr").lexically_normal();
+        const bool intelSupported=gpu.vendor==0x8086;
+        const bool daemonFiles=pipeline::IntelNrBackend::runtimeAvailable(intelNrDirectory);
+        const bool weights=pipeline::IntelNrBackend::weightsAvailable(intelNrDirectory,true)||pipeline::IntelNrBackend::weightsAvailable(intelNrDirectory,false);
+        out["nr5"]=QVariantMap{{"available",intelSupported&&daemonFiles&&weights},{"supported",intelSupported},
+            {"reason",!intelSupported?QObject::tr("需要 Intel Arc 显卡（XMX）"):!daemonFiles?QObject::tr("当前包缺少 Intel NR 运行组件"):!weights?QObject::tr("请先从您自己的 nvngx_dlssnr.dll 提取权重"):QString{}}};
+    }
     wchar_t systemDir[MAX_PATH]{};
     const bool hipMissing=gpu.rx7000?!pipeline::Rdna3NrBackend::hipRuntimeAvailable():
         GetSystemDirectoryW(systemDir, MAX_PATH)&&!exists(std::filesystem::path(systemDir)/"amdhip64_7.dll")&&!GetModuleHandleW(L"amdhip64_7.dll");
@@ -248,7 +259,7 @@ QVariantMap QmlPlayerBridge::effectAvailability(const QString& id) const {
 QVariantList QmlPlayerBridge::nrRuntimeChoices() const {
     QVariantList choices;
     const auto caps = effectCapabilities();
-    for (const auto& entry : std::initializer_list<std::pair<int, QString>>{{2, "RTX 20–50 · SF 310.9.16"}, {3, tr("RTX 50 · NVIDIA 原版")}, {4, effectGpu().rx7000?tr("RX 7000 · RedDuke（实验）"):tr("RX 9000 · lmxxf（实验）")}}) {
+    for (const auto& entry : std::initializer_list<std::pair<int, QString>>{{2, "RTX 20–50 · SF 310.9.16"}, {3, tr("RTX 50 · NVIDIA 原版")}, {4, effectGpu().rx7000?tr("RX 7000 · RedDuke（实验）"):tr("RX 9000 · lmxxf（实验）")}, {5, tr("Intel XMX · DLSS-NR（实验）")}}) {
         const auto cap = caps.value("nr" + QString::number(entry.first)).toMap();
         if (!cap.value("supported").toBool()) continue;
         choices << QVariantMap{{"id", QString::number(entry.first)}, {"label", entry.second}, {"disabled", !cap.value("available").toBool()}, {"note", cap.value("reason")}};

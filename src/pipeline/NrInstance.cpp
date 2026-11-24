@@ -46,6 +46,7 @@ bool NrInstance::createAmdHdrProxy(ID3D12Device* device) {
 
 void NrInstance::close() {
     amd.reset(); // runtime releases its references before the layer textures
+    intel.reset(); // the NR daemon likewise, before the shared buffers go
     temporal_.close();
     // Both owned and borrowed inputs are ComPtrs. Release this reference in
     // either case; the graph retains its own reference to a borrowed input.

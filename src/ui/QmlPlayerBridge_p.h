@@ -443,6 +443,7 @@ struct QmlPlayerBridge::Impl {
     // notify with every engine snapshot, so each 60 Hz tick re-read the manifest and
     // rebuilt the page's 49 rows (audit 2026-10-15 B5).
     QVariantList componentList; bool componentListRead = false;
+    std::atomic<bool> intelNrExtracting{false};
     bool liveCompanionCap = false;   // updateLiveCompanionCompat
     int captureHiddenRates = 0;   // set with captureRateCache
     template <class Build> const QVariantList& captureList(CaptureListCache& cache, const std::wstring& a, const std::wstring& b, Build&& build) {
