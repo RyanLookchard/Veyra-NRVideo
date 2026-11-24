@@ -6,6 +6,7 @@
 #include <QFileDialog>
 #include <QPointer>
 #include <thread>
+#include <fstream>
 
 namespace veyra::ui {
 // --- shell preferences -------------------------------------------------------
@@ -166,32 +167,72 @@ bool QmlPlayerBridge::extractIntelNrWeights(const QString& dllPath) {
     // bridge being destroyed mid-extraction (QPointer nulls on delete).
     QPointer<QmlPlayerBridge> self(this);
     std::thread([self, root, python, unpack, dll, outDir] {
-        auto run = [&](const wchar_t* preset, const wchar_t* out) {
+        // Per-preset log capture: the extractor's real error line is surfaced
+        // instead of a generic failure. Logs live beside the weights.
+        auto run = [&](const wchar_t* preset, const wchar_t* out, std::string& errLine) {
+            const auto outPath = outDir / out;
+            std::error_code ec;
+            if (std::filesystem::is_regular_file(outPath, ec)) {
+                // Already extracted (the tool refuses an existing output): skip.
+                errLine = "already-extracted";
+                return true;
+            }
+            std::filesystem::remove(outPath, ec); // clear any partial output
+            const auto logPath = outDir / (std::wstring(out) + L".log");
+            SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+            HANDLE logFile = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa,
+                                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (logFile == INVALID_HANDLE_VALUE) { errLine = "cannot create log file"; return false; }
             auto command = std::format(L"\"{}\" -X utf8 -B \"{}\" \"{}\" \"{}\" --preset {}",
-                python.wstring(), unpack.wstring(), dll.wstring(), (outDir / out).wstring(), preset);
+                python.wstring(), unpack.wstring(), dll.wstring(), outPath.wstring(), preset);
             STARTUPINFOW si{}; si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = logFile; si.hStdError = logFile;
+            si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
             PROCESS_INFORMATION pi{};
-            if (!CreateProcessW(python.c_str(), command.data(), nullptr, nullptr, FALSE,
-                                CREATE_NO_WINDOW, nullptr, root.c_str(), &si, &pi))
-                return false;
+            const bool created = CreateProcessW(python.c_str(), command.data(), nullptr, nullptr, TRUE,
+                                CREATE_NO_WINDOW, nullptr, root.c_str(), &si, &pi);
+            CloseHandle(logFile);
+            if (!created) { errLine = std::format("CreateProcess win32={}", GetLastError()); return false; }
             CloseHandle(pi.hThread);
-            WaitForSingleObject(pi.hProcess, 600000);
+            bool timedOut = false;
+            if (WaitForSingleObject(pi.hProcess, 600000) == WAIT_TIMEOUT) {
+                timedOut = true;
+                TerminateProcess(pi.hProcess, 125);
+                WaitForSingleObject(pi.hProcess, 5000);
+            }
             DWORD code = 1; GetExitCodeProcess(pi.hProcess, &code);
             CloseHandle(pi.hProcess);
-            return code == 0;
+            if (timedOut) { errLine = "extractor timed out (10 min)"; return false; }
+            if (code == 0) return true;
+            // Read the log's last meaningful line for the user-facing notice.
+            std::ifstream log(logPath, std::ios::binary);
+            std::string line, last;
+            while (std::getline(log, line)) {
+                if (!line.empty() && line.find("Traceback") == std::string::npos &&
+                    line.find("  File ") == std::string::npos)
+                    last = line;
+            }
+            errLine = last.empty() ? std::format("exit code {}", code) : last;
+            return false;
         };
-        const bool a = run(L"A", L"dlssnr-logical.safetensors");
-        const bool b = run(L"B", L"dlssnr-b-logical.safetensors");
+        std::string errA, errB;
+        const bool a = run(L"A", L"dlssnr-logical.safetensors", errA);
+        const bool b = run(L"B", L"dlssnr-b-logical.safetensors", errB);
         const bool ok = a || b;
         if (!self) return;
-        QMetaObject::invokeMethod(self, [self, ok, a, b] {
+        QMetaObject::invokeMethod(self, [self, ok, a, b, errA, errB] {
             if (!self) return;
             self->impl_->intelNrExtracting = false;
             emit self->intelNrExtractingChanged();
             self->refreshComponentList();
-            if (ok) emit self->notice(self->tr("Intel NR 权重提取完成（%1）。在 NR 版本里选择 Intel XMX 即可使用")
-                .arg(QString::fromUtf8(a && b ? "A/B" : a ? "仅 A" : "仅 B")), false);
-            else emit self->notice(self->tr("Intel NR 权重提取失败：请确认 DLL 为 310.8 / 310.9.16 原版，详见后台日志"), true);
+            if (ok) {
+                const QString which = QString::fromUtf8(a && b ? "A/B" : a ? "仅 A（该 DLL 无 B 网络，需 310.9.16+）" : "仅 B");
+                emit self->notice(self->tr("Intel NR 权重提取完成（%1）。在 NR 版本里选择 Intel XMX 即可使用").arg(which), false);
+            } else {
+                const QString detail = QString::fromUtf8((errA.empty() ? errB : errA).c_str());
+                emit self->notice(self->tr("Intel NR 权重提取失败：%1").arg(detail), true);
+            }
         }, Qt::QueuedConnection);
     }).detach();
     return true;
