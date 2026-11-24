@@ -225,7 +225,11 @@ QString disableUnavailableEffects(engine::ChainConfiguration& configuration) {
             }
             if (id.isEmpty() || !node.enabled) continue;
             const auto cap = caps.value(id).toMap();
-            if (!cap.value("available").toBool()) {
+            // Intel XMX: supported by this adapter even before the weights are
+            // extracted. Do not disable the node at restore: the backend gates
+            // on weights at open time, and the user extracts them in place.
+            const bool intelPreExtraction = id == QLatin1String("nr5") && cap.value("supported").toBool();
+            if (!cap.value("available").toBool() && !intelPreExtraction) {
                 node.enabled = false;
                 reasons << id + ": " + cap.value("reason").toString();
             }

@@ -1866,6 +1866,8 @@ bool EnhanceGraph::initNgxFeatures()
                 instance->temporalEnabled,desc_.hdrWorking(),instance->model.style,correction.autoAmount,
                 correction.hue,correction.chroma,correction.highlight,correction.compression,correction.stability,
                 correction.neutral,correction.colorKeep,correction.lumaKeep,correction.shadow));
+            veyra::log::info("nr-backend",std::format("layer={} vendor=0x{:04X} nrRuntime={} lmxxf={} intel={} nrEnabled={}",
+                index+1,context_.adapter().vendorId,int(desc_.nrRuntime),lmxxfNr_,intelNr_,nrEnabled_));
             if(lmxxfNr_){
                 failedBackend_=engine::FailedBackend::Nr;
                 // The upstream ABI is linear SDR. HDR uses a bounded proxy and
