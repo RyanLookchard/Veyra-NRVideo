@@ -4,6 +4,7 @@
 // the host has; on an Intel host the gate test is skipped (the positive path
 // needs the user-supplied DLL and is covered by tools/fsr4_driver_probe).
 #include "veyra/gfx/Fsr4SrBackend.h"
+#include "veyra/gfx/FsrSrBackend.h"
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -61,6 +62,20 @@ int main() {
     if (GetModuleHandleW(L"amdxcffx64.dll") != nullptr) {
         std::printf("FAIL amdxcffx64.dll loaded despite vendor refusal\n");
         return 1;
+    }
+    // FSR3 must stay usable after the FSR4 refusals: its runtime directory is
+    // shared, and a leaked hook or DLL state would break the existing path.
+    {
+        veyra::gfx::FsrSrBackend fsr3;
+        const bool fsr3Up = fsr3.initialize(device.Get(), 1920, 1080, 2560, 1440, false);
+        // The FSR3 runtime may legitimately be absent on a dev host; only a
+        // present runtime that fails to initialize is a regression.
+        if (!fsr3Up && veyra::gfx::Fsr4SrBackend::runtimeAvailable()) {
+            std::printf("FAIL FSR3 initialize failed after FSR4 refusals while runtime present\n");
+            return 1;
+        }
+        fsr3.release();
+        std::printf("FSR3 after FSR4 refusal: %s\n", fsr3Up ? "initialized+released clean" : "runtime absent (skip)");
     }
     std::printf("PASS FSR4 vendor gate: non-Intel refused, no DLL loaded, 3 cycles clean\n");
     return 0;
