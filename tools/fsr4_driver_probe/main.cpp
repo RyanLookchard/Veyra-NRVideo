@@ -347,8 +347,9 @@ int wmain(int argc, wchar_t** argv) {
         std::printf("[fsr4] factory creation failed\n");
         return 5;
     }
-    // Prefer an Intel adapter when present (the FSR4-on-Arc question); fall
-    // back to the highest-performance adapter otherwise.
+    // Prefer an Intel adapter (the FSR4-on-Arc question); the first non-software
+    // adapter is only a fallback for the NVIDIA baseline run.
+    ComPtr<IDXGIAdapter1> fallback;
     for (UINT i = 0; ; ++i) {
         ComPtr<IDXGIAdapter1> candidate;
         if (factory->EnumAdapters1(i, &candidate) == DXGI_ERROR_NOT_FOUND) break;
@@ -356,9 +357,10 @@ int wmain(int argc, wchar_t** argv) {
         candidate->GetDesc1(&desc);
         if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
         std::wprintf(L"[fsr4] adapter[%u]=%s vendor=0x%04X\n", i, desc.Description, desc.VendorId);
-        if (desc.VendorId == 0x8086 && !adapter) adapter = candidate;
-        if (!adapter) adapter = candidate;
+        if (desc.VendorId == 0x8086) { adapter = candidate; break; }
+        if (!fallback) fallback = candidate;
     }
+    if (!adapter) adapter = fallback;
     if (!adapter) {
         std::printf("[fsr4] adapter selection failed\n");
         return 5;
@@ -465,8 +467,34 @@ int wmain(int argc, wchar_t** argv) {
     src.PlacedFootprint = colorFootprint;
     list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
     transition(list.Get(), color.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    for (auto* guidance : {motion.Get(), depth.Get()})
-        transition(list.Get(), guidance, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    // Committed resources are not guaranteed zero: clear motion/depth explicitly
+    // so the static-scene guidance is deterministic.
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.NumDescriptors = 2;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        ComPtr<ID3D12DescriptorHeap> clearHeap;
+        if (SUCCEEDED(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&clearHeap)))) {
+            const UINT inc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            auto cpu = clearHeap->GetCPUDescriptorHandleForHeapStart();
+            auto gpu = clearHeap->GetGPUDescriptorHandleForHeapStart();
+            int slot = 0;
+            for (auto* guidance : {motion.Get(), depth.Get()}) {
+                D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
+                uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+                uav.Format = guidance->GetDesc().Format;
+                D3D12_CPU_DESCRIPTOR_HANDLE c{cpu.ptr + SIZE_T(slot) * inc};
+                device->CreateUnorderedAccessView(guidance, nullptr, &uav, c);
+                transition(list.Get(), guidance, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                const UINT zeros[4] = {0, 0, 0, 0};
+                D3D12_GPU_DESCRIPTOR_HANDLE g{gpu.ptr + UINT64(slot) * inc};
+                list->ClearUnorderedAccessViewUint(g, c, guidance, zeros, 0, nullptr);
+                transition(list.Get(), guidance, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                ++slot;
+            }
+        }
+    }
     transition(list.Get(), output.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
     ffxReturnCode_t dispatchResult = FFX_API_RETURN_ERROR;
@@ -520,10 +548,16 @@ int wmain(int argc, wchar_t** argv) {
     QueryPerformanceCounter(&g0);
     queue->Signal(fence.Get(), 1);
     fence->SetEventOnCompletion(1, fenceEvent);
-    WaitForSingleObject(fenceEvent, 30000);
+    const DWORD waitResult = WaitForSingleObject(fenceEvent, 30000);
     QueryPerformanceCounter(&g1);
-    std::printf("[fsr4] gpuTotal=%.3fms (all %d frames + readback)\n",
+    std::printf("[fsr4] gpuWall=%.3fms (execute+wait+readback, all %d frames)\n",
                 double(g1.QuadPart - g0.QuadPart) * 1000.0 / double(freq.QuadPart), loops);
+    if (waitResult != WAIT_OBJECT_0) {
+        std::printf("[fsr4] VERDICT GPU fence timed out; readback skipped\n");
+        provider.destroyContext(&context, nullptr);
+        CloseHandle(fenceEvent);
+        return 1;
+    }
 
     double mean = 0.0;
     int distinct = 0;

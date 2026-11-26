@@ -1056,6 +1056,9 @@ if(VEYRA_FFMPEG_ROOT AND EXISTS "${VEYRA_FFMPEG_ROOT}/include/libavformat/avform
   add_executable(veyra_fsr_dispatch_tests tests/integration/FsrFgDispatchTests.cpp)
   target_compile_features(veyra_fsr_dispatch_tests PRIVATE cxx_std_20)
   target_link_libraries(veyra_fsr_dispatch_tests PRIVATE veyra_gfx d3d12 dxgi dxguid)
+  add_executable(veyra_fsr4_vendor_gate_tests tests/integration/Fsr4VendorGateTests.cpp)
+  target_compile_features(veyra_fsr4_vendor_gate_tests PRIVATE cxx_std_20)
+  target_link_libraries(veyra_fsr4_vendor_gate_tests PRIVATE veyra_gfx d3d12 dxgi dxguid)
 # Everything that touches media headers (NetworkInput, Dovi, the audio tests) needs these.
 # Upstream relies on its own build environment exporting them; we add them globally.
 include_directories(${FFMPEG_INCLUDE_DIRS})

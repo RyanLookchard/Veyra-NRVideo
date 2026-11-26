@@ -183,6 +183,21 @@ void hookModelsLocked(HMODULE module) {
     }
 }
 
+// Caller holds g_shared.mutex. Restores hooks and unloads every module the
+// shared runtime owns; used by every init failure path and the last release.
+void teardownSharedLocked() {
+    for (auto& patched : g_shared.patched) {
+        if (patched.original) patchVtableEntry(&patched.vtable[kIsSupportedIndex],
+                                               reinterpret_cast<void*>(patched.original));
+    }
+    g_shared.patched.clear();
+    g_shared.provider = {};
+    g_shared.providerVersion.clear();
+    if (g_shared.driver) { FreeLibrary(g_shared.driver); g_shared.driver = nullptr; }
+    if (g_shared.sdkUpscaler) { FreeLibrary(g_shared.sdkUpscaler); g_shared.sdkUpscaler = nullptr; }
+    if (g_shared.sdkLoader) { FreeLibrary(g_shared.sdkLoader); g_shared.sdkLoader = nullptr; }
+}
+
 FfxApiSurfaceFormat surfaceFormatFromDxgi(DXGI_FORMAT format) {
     switch (format) {
     case DXGI_FORMAT_R8G8B8A8_UNORM: return FFX_API_SURFACE_FORMAT_R8G8B8A8_UNORM;
@@ -264,7 +279,8 @@ bool Fsr4SrBackend::runtimeAvailable() {
 #ifdef VEYRA_HAS_FSR
     const auto root = runtimeRoot();
     return std::filesystem::exists(root / "amdxcffx64.dll") &&
-           std::filesystem::exists(root / "amd_fidelityfx_loader_dx12.dll");
+           std::filesystem::exists(root / "amd_fidelityfx_loader_dx12.dll") &&
+           std::filesystem::exists(root / "amd_fidelityfx_upscaler_dx12.dll");
 #else
     return false;
 #endif
@@ -321,14 +337,14 @@ bool Fsr4SrBackend::initialize(ID3D12Device* device, uint32_t maxRenderWidth, ui
                                          LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!g_shared.driver) {
             log::error("fsr4-sr", std::format("driver load failed win32={}", GetLastError()));
+            teardownSharedLocked();
             return false;
         }
         auto updateProvider = reinterpret_cast<PFN_UpdateFfxApiProvider>(
             GetProcAddress(g_shared.driver, "UpdateFfxApiProvider"));
         if (!updateProvider) {
             log::error("fsr4-sr", "UpdateFfxApiProvider export missing");
-            FreeLibrary(g_shared.driver);
-            g_shared.driver = nullptr;
+            teardownSharedLocked();
             return false;
         }
         hookModelsLocked(g_shared.driver);
@@ -350,15 +366,7 @@ bool Fsr4SrBackend::initialize(ID3D12Device* device, uint32_t maxRenderWidth, ui
         }
         if (!g_shared.provider.createContext) {
             log::error("fsr4-sr", "no upscaler provider from the driver DLL");
-            for (auto& patched : g_shared.patched) {
-                if (patched.original) patchVtableEntry(&patched.vtable[kIsSupportedIndex],
-                                                       reinterpret_cast<void*>(patched.original));
-            }
-            g_shared.patched.clear();
-            FreeLibrary(g_shared.driver);
-            g_shared.driver = nullptr;
-            if (g_shared.sdkUpscaler) { FreeLibrary(g_shared.sdkUpscaler); g_shared.sdkUpscaler = nullptr; }
-            if (g_shared.sdkLoader) { FreeLibrary(g_shared.sdkLoader); g_shared.sdkLoader = nullptr; }
+            teardownSharedLocked();
             return false;
         }
     }
@@ -480,18 +488,7 @@ void Fsr4SrBackend::release() {
     p.available = false;
     // Restore the vtable patches and unload only after the last context is
     // gone; another live instance keeps the hooks and modules alive.
-    if (g_shared.refs == 0) {
-        for (auto& patched : g_shared.patched) {
-            if (patched.original) patchVtableEntry(&patched.vtable[kIsSupportedIndex],
-                                                   reinterpret_cast<void*>(patched.original));
-        }
-        g_shared.patched.clear();
-        g_shared.provider = {};
-        g_shared.providerVersion.clear();
-        if (g_shared.driver) { FreeLibrary(g_shared.driver); g_shared.driver = nullptr; }
-        if (g_shared.sdkUpscaler) { FreeLibrary(g_shared.sdkUpscaler); g_shared.sdkUpscaler = nullptr; }
-        if (g_shared.sdkLoader) { FreeLibrary(g_shared.sdkLoader); g_shared.sdkLoader = nullptr; }
-    }
+    if (g_shared.refs == 0) teardownSharedLocked();
 #endif
 }
 
