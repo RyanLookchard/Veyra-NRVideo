@@ -433,6 +433,8 @@ class QmlPlayerBridge : public QObject {
     Q_PROPERTY(int dualSrTargetIndex READ dualSrTargetIndex WRITE setDualSrTargetIndex NOTIFY settingsChanged)
     Q_PROPERTY(int dualSrQuality READ dualSrQuality WRITE setDualSrQuality NOTIFY settingsChanged)
     Q_PROPERTY(int srOutput READ srOutput WRITE setSrOutput NOTIFY settingsChanged)
+    // RCAS sharpening percent (0..100) inside the FSR 3.1 / FSR4 dispatch.
+    Q_PROPERTY(int srSharpness READ srSharpness WRITE setSrSharpness NOTIFY settingsChanged)
     Q_PROPERTY(bool protectionEnabled READ protectionEnabled WRITE setProtectionEnabled NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap protectionState READ protectionState NOTIFY protectionChanged)
     Q_PROPERTY(bool exclusionOverlayVisible READ exclusionOverlayVisible WRITE setExclusionOverlayVisible NOTIFY protectionChanged)
@@ -1123,6 +1125,8 @@ public:
     int dualSrQuality() const;
     void setDualSrQuality(int quality);
     void setSrPrescale(int value);
+    int srSharpness() const;
+    void setSrSharpness(int value);
     int srOutput() const;
     void setSrOutput(int value);
     bool protectionEnabled() const;

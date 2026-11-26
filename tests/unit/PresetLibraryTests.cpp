@@ -1173,6 +1173,53 @@ __declspec(noinline) void testSrStageStorage() {
     auto restored=std::make_unique<ChainSession>();ChainSessionStore reopened(sessionPath);
     check(reopened.load(*restored)&&*restored==*session,"SR stage session: List and Node values round-trip independently");
 }
+// RCAS sharpness (library v27 / session v22): a non-default value travels in
+// its own sidecar; the default keeps the old format and older bytes intact.
+__declspec(noinline) void testSrSharpnessStorage() {
+    EnhancementSettings source;source.nr=false;source.sr=true;source.videoSrQuality=kVideoSrFsr4;
+    const auto libraryPath=scratch(L"sr-sharp-library.v1");
+    for(const auto* suffix:{L".field-render",L".sr-sharpness",L".field-render.sr-sharpness"})std::filesystem::remove(std::filesystem::path(libraryPath).concat(suffix));
+    PresetLibrary writer(libraryPath);writer.setIncludeBuiltins(false);
+    PresetEntry entry;entry.name=L"FSR4 sharp";entry.kind=ChainMode::List;
+    entry.contents=presetContentMask(PresetContent::Chain);entry.chain=toChain(source);
+    entry.globals=ChainGlobalSettings::capture(source);
+    check(writer.load()&&writer.put(entry),"SR sharpness presets: default saves the old format");
+    const auto rollback=readBytes(std::filesystem::path(libraryPath).concat(L".field-render"));
+    check(!rollback.empty(),"SR sharpness presets: default value wrote a base file");
+    entry.globals->srSharpness=65;
+    check(writer.put(entry,true),"SR sharpness presets: save a custom value");
+    check(readBytes(std::filesystem::path(libraryPath).concat(L".field-render"))==rollback,"SR sharpness presets: original library retained for rollback");
+    check(readBytes(std::filesystem::path(libraryPath).concat(L".field-render.sr-sharpness")).starts_with("VEYRA_PRESET_LIBRARY 27"),"SR sharpness presets: sidecar declares v27");
+    PresetLibrary reader(libraryPath);reader.setIncludeBuiltins(false);
+    check(reader.load()&&reader.entries().size()==1&&reader.entries()[0].globals->srSharpness==65,"SR sharpness presets: fresh reader finds the sidecar");
+    auto applied=source;PresetLibrary::apply(reader.entries()[0],applied);
+    check(applied.srSharpness==65,"SR sharpness presets: applying the chain restores the value");
+    // Back to the default: the writer already opted into the v27 sidecar, so
+    // the edit stays there (same convention as .video-denoise / .fg-options);
+    // the version drops because the payload no longer needs the new field.
+    entry.globals->srSharpness=20;
+    check(writer.put(entry,true),"SR sharpness presets: default edit saves");
+    const auto afterDefault=readBytes(std::filesystem::path(libraryPath).concat(L".field-render.sr-sharpness"));
+    check(afterDefault.starts_with("VEYRA_PRESET_LIBRARY "),"SR sharpness presets: default edit stays in the sidecar");
+    PresetLibrary defaultReader(libraryPath);defaultReader.setIncludeBuiltins(false);
+    check(defaultReader.load()&&defaultReader.entries().size()==1&&defaultReader.entries()[0].globals->srSharpness==20,"SR sharpness presets: default value round-trips");
+
+    const auto sessionPath=scratch(L"sr-sharp-session.v1");
+    for(const auto* suffix:{L".sr-sharpness",L".p3-editor",L".p3-editor.sr-sharpness"})std::filesystem::remove(std::filesystem::path(sessionPath).concat(suffix));
+    std::filesystem::remove(sessionPath);
+    auto session=std::make_unique<ChainSession>(ChainSession::initial(source));
+    check(session->select(ChainMode::Node),"SR sharpness session: initialize node configuration");
+    ChainSessionStore sessions(sessionPath);
+    check(sessions.save(*session),"SR sharpness session: save default rollback file");
+    const auto sessionRollback=readBytes(sessionPath);
+    session->configurations[0].srSharpness=40;
+    session->configurations[1].srSharpness=80;
+    check(sessions.save(*session)&&readBytes(sessionPath)==sessionRollback,"SR sharpness session: new format beside the original");
+    check(readBytes(std::filesystem::path(sessionPath).concat(L".sr-sharpness")).starts_with("VEYRA_CHAIN_SESSION 22"),"SR sharpness session: sidecar declares v22");
+    auto restored=std::make_unique<ChainSession>();ChainSessionStore reopened(sessionPath);
+    check(reopened.load(*restored)&&*restored==*session,"SR sharpness session: List and Node values round-trip independently");
+    check(restored->configurations[0].srSharpness==40&&restored->configurations[1].srSharpness==80,"SR sharpness session: both modes keep their own value");
+}
 // E0 (2026-10-18): library v14 / session v9 carry anti-aliasing nodes and chains
 // past 16 nodes in their own files; older readers keep their bytes.
 __declspec(noinline) void testBeautyNodeStorage() {
@@ -1626,6 +1673,7 @@ int main(int argc,char** argv) {
     testBeautyNodeStorage();
     testDlssSrModels();
     testSrStageStorage();
+    testSrSharpnessStorage();
     testDualSrStorage();
     testFlowStorage();
     testFlowApplication();

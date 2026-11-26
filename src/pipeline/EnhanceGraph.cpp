@@ -4131,7 +4131,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
             auto* target=restore.raw?restore.raw.Get():output;
             const bool fsrReset=reset||(desc_.srUsesFlow()&&motion==fsrSrZeroMotion_.Get());
             readable({color,motion,fsrSrDepth_.Get()});tracker_.transition(list,target,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            if(!backend.evaluate(list,color,motion,fsrSrDepth_.Get(),target,inW,inH,outW,outH,fsrReset,float(deltaMs))){
+            if(!backend.evaluate(list,color,motion,fsrSrDepth_.Get(),target,inW,inH,outW,outH,fsrReset,float(deltaMs),float(desc_.srSharpness)/100.0f)){
                 failedBackend_=engine::FailedBackend::Sr;veyra::log::error("dual-sr","FSR evaluate failed");return false;
             }
             finishTemporalOutput(list,restore,output);
@@ -4155,7 +4155,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
             auto* target=restore.raw?restore.raw.Get():output;
             const bool fsrReset=reset||(desc_.srUsesFlow()&&motion==fsrSrZeroMotion_.Get());
             readable({color,motion,fsrSrDepth_.Get()});tracker_.transition(list,target,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            if(!backend.evaluate(list,color,motion,fsrSrDepth_.Get(),target,inW,inH,outW,outH,fsrReset,float(deltaMs))){
+            if(!backend.evaluate(list,color,motion,fsrSrDepth_.Get(),target,inW,inH,outW,outH,fsrReset,float(deltaMs),float(desc_.srSharpness)/100.0f)){
                 failedBackend_=engine::FailedBackend::Sr;veyra::log::error("dual-sr","FSR4 evaluate failed");return false;
             }
             finishTemporalOutput(list,restore,output);
@@ -4243,7 +4243,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         auto* fsrTarget=srHdrRestore_.raw?srHdrRestore_.raw.Get():workRgba_.Get();
         tracker_.transition(list,fsrTarget,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         if(!fsrSrBackend_->evaluate(list,srInput,srMotion,fsrSrDepth_.Get(),fsrTarget,
-                                    srcW_,srcH_,workW_,workH_,reset||(desc_.srUsesFlow()&&!fsrSourceMotion),float(deltaMs))){
+                                    srcW_,srcH_,workW_,workH_,reset||(desc_.srUsesFlow()&&!fsrSourceMotion),float(deltaMs),float(desc_.srSharpness)/100.0f)){
             failedBackend_=engine::FailedBackend::Sr;
             return false;
         }
@@ -4285,7 +4285,7 @@ bool EnhanceGraph::process(const AVFrame* frame, double ptsMs, bool reset, Frame
         auto* fTarget=srHdrRestore_.raw?srHdrRestore_.raw.Get():workRgba_.Get();
         tracker_.transition(list,fTarget,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         if(!fsr4SrBackend_->evaluate(list,srInput,srMotion,fsrSrDepth_.Get(),fTarget,
-                                    srcW_,srcH_,workW_,workH_,reset||(desc_.srUsesFlow()&&!haveFlow),float(deltaMs))){
+                                    srcW_,srcH_,workW_,workH_,reset||(desc_.srUsesFlow()&&!haveFlow),float(deltaMs),float(desc_.srSharpness)/100.0f)){
             failedBackend_=engine::FailedBackend::Sr;
             return false;
         }
@@ -5265,6 +5265,7 @@ bool EnhanceGraph::applySettings(const engine::EnhancementSettings& s){
     if(faceTracker_)faceTracker_->configure(desc_.beautyDetection,beautyMinConfidence());
     desc_.contentRate=s.content;desc_.model=s.model;desc_.residual=s.residual;desc_.protection=s.protection;desc_.exclusion=s.exclusion;desc_.hudProtect=s.hudProtect;desc_.settingsRevision=s.revision;
     desc_.nrHoldStrength=s.nrHoldStrength;desc_.nrHoldTolerance=s.nrHoldTolerance;
+    desc_.srSharpness=s.srSharpness;
     if(desc_.nrReusePreview&&s.nr){
         const auto previousReuse=desc_.nrReuse;desc_.nrReuse=s.nrReuse;
         if(nrReusePass_&&desc_.nrReuse!=previousReuse){

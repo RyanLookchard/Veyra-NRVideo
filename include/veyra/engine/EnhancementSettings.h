@@ -491,6 +491,9 @@ struct EnhancementSettings {
     // ignores it.
     pipeline::SrPrescale srPrescale=pipeline::SrPrescale::Off;
     pipeline::SrOutput srOutput=pipeline::SrOutput::Target;
+    // RCAS sharpening inside the FSR 3.1 / FSR4 dispatch (0..100 percent).
+    // Other SR backends ignore it; a live uniform, never a graph rebuild.
+    uint32_t srSharpness=20;
     bool dualSrEnabled=false;
     pipeline::SrTarget dualSrTarget=pipeline::SrTarget::Uhd4K;
     uint32_t dualSrQuality=kDefaultVideoSrQuality; // any SR value (DLSS SR, RTX Video SR family/tier, FSR), independent of the base
@@ -614,6 +617,10 @@ struct EnhancementSettings {
         }
         // The supersample shrink belongs to a single RTX Video SR pass.
         if(!sr||!rtxVideoSr(videoSrQuality)||dualSrEnabled)active.srOutput=defaults.srOutput;
+        // RCAS sharpness serves the FSR 3.1 / FSR4 dispatch only.
+        if(!sr||(videoSrQuality!=kVideoSrFsr&&videoSrQuality!=kVideoSrFsr4&&
+           !(dualSrEnabled&&(dualSrQuality==kVideoSrFsr||dualSrQuality==kVideoSrFsr4))))
+            active.srSharpness=defaults.srSharpness;
         if(multiplier<=1){
             active.frameGenerationBackend=defaults.frameGenerationBackend;active.vfgQuality=defaults.vfgQuality;
             active.fgMotion=defaults.fgMotion;active.fgStrictAdmission=defaults.fgStrictAdmission;
@@ -712,6 +719,8 @@ struct EnhancementSettings {
         for(size_t i=0;i<additionalBeauty.size();++i)
             if(video.additionalBeauty[i].sameStructure(target.additionalBeauty[i]))video.additionalBeauty[i]=target.additionalBeauty[i];
         video.beautyDetection=target.beautyDetection;
+        // RCAS sharpness is a dispatch uniform: never a rebuild.
+        video.srSharpness=target.srSharpness;
         return video==target;
     }
     void rejectVideoRequest(const EnhancementSettings& attempted,const EnhancementSettings& previous) {
@@ -780,6 +789,7 @@ struct EnhancementSettings {
         if(!pipeline::validSrTarget(srTarget))return "invalid SR target";
         if(!pipeline::validSrPrescale(srPrescale))return "invalid SR prescale";
         if(!pipeline::validSrOutput(srOutput))return "invalid SR output";
+        if(srSharpness>100)return "invalid SR sharpness";
         if(!pipeline::validSrTarget(dualSrTarget)||!validVideoSrQuality(dualSrQuality))return "invalid second SR target or quality";
         if(opticalFlowBackend!=OpticalFlowBackend::Nvidia&&opticalFlowBackend!=OpticalFlowBackend::AmdFidelityFx&&opticalFlowBackend!=OpticalFlowBackend::GpuDis)return "invalid optical flow backend";
         if(multiplier<1||multiplier>(frameGenerationBackend==FrameGenerationBackend::Vfg?8u:6u))return "unsupported multiplier";

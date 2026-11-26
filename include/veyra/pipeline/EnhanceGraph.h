@@ -96,6 +96,7 @@ struct EnhanceGraphDesc {
     uint32_t workHeight = 2160;
     uint32_t videoSrQuality=0;
     uint32_t dlssSrModel=0;      // engine::EnhancementSettings::dlssSrModel (DLSS SR only)
+    uint32_t srSharpness=20;     // RCAS percent inside the FSR 3.1 / FSR4 dispatch; live uniform
     bool enableSr = false;       // upscale source -> work extent (1:1 bypass otherwise)
     bool enableNr = true;
     bool nrBeforeSr = false;

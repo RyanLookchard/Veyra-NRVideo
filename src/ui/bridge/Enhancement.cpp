@@ -129,6 +129,14 @@ void QmlPlayerBridge::setSrPrescale(int value) {
     s.srPrescale = want;
     if (impl_->commit(s)) emit settingsChanged();
 }
+int QmlPlayerBridge::srSharpness() const { return int(settings().srSharpness); }
+void QmlPlayerBridge::setSrSharpness(int value) {
+    if (value < 0 || value > 100) return;
+    auto s = settings();
+    if (s.srSharpness == uint32_t(value)) return;
+    s.srSharpness = uint32_t(value);
+    if (impl_->commit(s)) emit settingsChanged();
+}
 void QmlPlayerBridge::setSrOutput(int value) {
     const auto want = pipeline::SrOutput(uint32_t(value));
     if (value < 0 || !pipeline::validSrOutput(want)) return;

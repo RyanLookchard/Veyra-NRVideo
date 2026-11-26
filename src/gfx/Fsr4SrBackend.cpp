@@ -440,7 +440,7 @@ bool Fsr4SrBackend::initialize(ID3D12Device* device, uint32_t maxRenderWidth, ui
 bool Fsr4SrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* color, ID3D12Resource* motion,
                              ID3D12Resource* depth, ID3D12Resource* output, uint32_t renderWidth,
                              uint32_t renderHeight, uint32_t upscaleWidth, uint32_t upscaleHeight,
-                             bool reset, float frameTimeMs) {
+                             bool reset, float frameTimeMs, float sharpness) {
 #ifdef VEYRA_HAS_FSR
     auto& p = *p_;
     if (!p.available || !list) return false;
@@ -465,8 +465,8 @@ bool Fsr4SrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* co
     dispatch.motionVectorScale = {1.0f, 1.0f};
     dispatch.renderSize = {renderWidth, renderHeight};
     dispatch.upscaleSize = {upscaleWidth, upscaleHeight};
-    dispatch.enableSharpening = false;
-    dispatch.sharpness = 0.0f;
+    dispatch.enableSharpening = sharpness > 0.0f;
+    dispatch.sharpness = std::clamp(sharpness, 0.0f, 1.0f);
     dispatch.frameTimeDelta = frameTimeMs > 0.0f ? frameTimeMs : 16.6f;
     dispatch.preExposure = 1.0f;
     dispatch.reset = reset;

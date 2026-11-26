@@ -1582,6 +1582,27 @@ VPage {
                                     onPicked: id => veyra.dlssSrModel = Number(id)
                                 }
                             }
+                            // RCAS sharpening inside the FSR 3.1 / FSR4 dispatch;
+                            // other algorithms have no such control.
+                            VRow {
+                                label: qsTr("锐化程度")
+                                hint: qsTr("FSR 超分内置锐化，0 关闭；过高会有光晕。")
+                                visible: veyra.srAlgorithmOf(veyra.videoSrQuality) === "5" || veyra.srAlgorithmOf(veyra.videoSrQuality) === "7"
+                                         || (veyra.dualSrEnabled && (veyra.srAlgorithmOf(veyra.dualSrQuality) === "5" || veyra.srAlgorithmOf(veyra.dualSrQuality) === "7"))
+                                Text {
+                                    text: veyra.srSharpness + "%"
+                                    color: Theme.t1; font.family: Theme.fontMono; font.pixelSize: 12
+                                }
+                                VSlider {
+                                    objectName: "list-sr-sharpness"
+                                    implicitWidth: 120
+                                    valueFromModel: true
+                                    resettable: true; defaultValue: 20
+                                    from: 0; to: 100; stepSize: 1
+                                    value: veyra.srSharpness
+                                    onMoved: value => veyra.srSharpness = Math.round(value)
+                                }
+                            }
                             SrStageEditor { Layout.fillWidth: true; namePrefix: "list" }
 
 
