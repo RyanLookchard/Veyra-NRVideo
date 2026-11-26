@@ -23,9 +23,10 @@ ColumnLayout {
         hint: qsTr("零运动会限制时序重建；RTX 视频超分不使用此输入")
         VSeg { options:[{id:"0",label:qsTr("零运动")},{id:"1",label:qsTr("光流")}]; current:String(veyra.srMotionSource); onPicked:id=>veyra.srMotionSource=Number(id) }
     }
-    // Tiers exist only for the RTX Video SR families. DLSS SR / FSR / XeSS /
-    // FSR4 have a single fixed quality model: hide the row instead of showing
-    // a dead grey control (user report 2026-11-26).
+    // Manual tiers belong to the RTX Video SR families only. XeSS picks its
+    // quality preset automatically from the scale ratio (qualityForRatio);
+    // DLSS SR / FSR / FSR4 have no manual tier. Hide the row instead of
+    // showing a dead grey control (user report 2026-11-26).
     VRow {
         label: qsTr("档位")
         hint: qsTr("越高越清晰、越耗时；流媒体只有中和超高两档。")
