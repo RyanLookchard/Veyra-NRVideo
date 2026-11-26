@@ -282,7 +282,7 @@ bool FsrSrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* col
     return true;
 #else
     (void)list; (void)color; (void)motion; (void)depth; (void)output; (void)renderWidth; (void)renderHeight;
-    (void)upscaleWidth; (void)upscaleHeight; (void)reset; (void)frameTimeMs;
+    (void)upscaleWidth; (void)upscaleHeight; (void)reset; (void)frameTimeMs; (void)sharpness;
     return false;
 #endif
 }

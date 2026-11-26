@@ -485,15 +485,15 @@ bool Fsr4SrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* co
     // First dispatch and every 300th: proves the ML path actually ran and at
     // which extents, so a silent plain-scale fallback is visible in the log.
     if (p.evaluateCount == 1 || p.evaluateCount % 300 == 0) {
-        log::info("fsr4-sr", std::format("evaluate#{} render={}x{} upscale={}x{} reset={} deltaMs={:.2f}",
+        log::info("fsr4-sr", std::format("evaluate#{} render={}x{} upscale={}x{} reset={} deltaMs={:.2f} sharpness={:.2f}",
                                          p.evaluateCount, renderWidth, renderHeight, upscaleWidth, upscaleHeight,
-                                         reset, dispatch.frameTimeDelta));
+                                         reset, dispatch.frameTimeDelta, dispatch.sharpness));
     }
     return true;
 #else
     (void)list; (void)color; (void)motion; (void)depth; (void)output;
     (void)renderWidth; (void)renderHeight; (void)upscaleWidth; (void)upscaleHeight;
-    (void)reset; (void)frameTimeMs;
+    (void)reset; (void)frameTimeMs; (void)sharpness;
     return false;
 #endif
 }
