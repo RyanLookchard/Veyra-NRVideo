@@ -441,9 +441,12 @@ bool Fsr4SrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* co
     ffxDispatchDescUpscale dispatch{};
     dispatch.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
     dispatch.commandList = list;
-    dispatch.color = makeResource(color, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
-    dispatch.depth = makeResource(depth, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
-    dispatch.motionVectors = makeResource(motion, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+    // Declared states match the states the caller actually set (same rule as
+    // FsrSrBackend): NON_PIXEL_SHADER_RESOURCE is COMPUTE_READ, not
+    // PIXEL_COMPUTE_READ; a mismatch produced runtime errors in the FG path.
+    dispatch.color = makeResource(color, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    dispatch.depth = makeResource(depth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    dispatch.motionVectors = makeResource(motion, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     dispatch.output = makeResource(output, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
     dispatch.jitterOffset = {0.0f, 0.0f};
     dispatch.motionVectorScale = {1.0f, 1.0f};
@@ -451,13 +454,13 @@ bool Fsr4SrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* co
     dispatch.upscaleSize = {upscaleWidth, upscaleHeight};
     dispatch.enableSharpening = false;
     dispatch.sharpness = 0.0f;
-    dispatch.frameTimeDelta = frameTimeMs;
+    dispatch.frameTimeDelta = frameTimeMs > 0.0f ? frameTimeMs : 16.6f;
     dispatch.preExposure = 1.0f;
     dispatch.reset = reset;
     dispatch.cameraNear = 0.1f;
     dispatch.cameraFar = 1000.0f;
     dispatch.cameraFovAngleVertical = 1.0f;
-    dispatch.viewSpaceToMetersFactor = 0.0f;
+    dispatch.viewSpaceToMetersFactor = 1.0f;
     dispatch.flags = 0;
     const auto result = g_shared.provider.dispatch(&p.context, &dispatch.header);
     if (result != FFX_API_RETURN_OK) {
@@ -466,6 +469,13 @@ bool Fsr4SrBackend::evaluate(ID3D12GraphicsCommandList* list, ID3D12Resource* co
         return false;
     }
     ++p.evaluateCount;
+    // First dispatch and every 300th: proves the ML path actually ran and at
+    // which extents, so a silent plain-scale fallback is visible in the log.
+    if (p.evaluateCount == 1 || p.evaluateCount % 300 == 0) {
+        log::info("fsr4-sr", std::format("evaluate#{} render={}x{} upscale={}x{} reset={} deltaMs={:.2f}",
+                                         p.evaluateCount, renderWidth, renderHeight, upscaleWidth, upscaleHeight,
+                                         reset, dispatch.frameTimeDelta));
+    }
     return true;
 #else
     (void)list; (void)color; (void)motion; (void)depth; (void)output;

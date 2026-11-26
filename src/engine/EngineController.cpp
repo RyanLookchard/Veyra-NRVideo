@@ -998,6 +998,7 @@ void EngineController::run(HWND window,std::wstring path,PlayerOptions options,s
                         // to the plain scale path with a visible warning.
                         if(opened&&graph->fsrSrRequested()&&!graph->fsrSrEnabled()){opened=false;failure=FailedBackend::Sr;}
                         if(opened&&graph->xessSrRequested()&&!graph->xessSrEnabled()){opened=false;failure=FailedBackend::Sr;}
+                        if(opened&&graph->fsr4SrRequested()&&!graph->fsr4SrEnabled()){opened=false;failure=FailedBackend::Sr;}
                     }
                 if(stop_)return false;
                 if(opened){
@@ -2725,9 +2726,11 @@ void EngineController::run(HWND window,std::wstring path,PlayerOptions options,s
                         captureGraphColor=activeSource->info().color;gd.rgbInput=captureGraphColor.pixelFormat==pipeline::SourcePixelFormat::Bgra8;
                         gd.yuy2Input=false;gd.packedInput=pipeline::packedInputCode(captureGraphColor.pixelFormat);gd.captureBitDepth=ingressBitDepth(captureGraphColor.pixelFormat);
                     }
-                    // Window capture publishes the same geometry used to rebuild
-                    // the graph, rather than retaining its opening DAR.
-                    if(isScreen||nativeCapture){
+                    // Every live source publishes the geometry used to rebuild
+                    // the graph. A stream that renegotiates mid-session (Xbox
+                    // adaptive bitrate) must not keep its opening extent in
+                    // the UI after the graph already switched.
+                    {
                         std::lock_guard lock(mutex_);snapshot_.sourceWidth=width;snapshot_.sourceHeight=height;snapshot_.sourceHdr=gd.hdrInput;snapshot_.sourceMasteringPeakNits=resizeMastering;snapshot_.sourceMaxCllNits=resizeCll;snapshot_.sourceMaxFallNits=resizeFall;snapshot_.sourceDisplayAspect=activeSource->info().displayAspect;
                     }
                     if(!presenter->prepareGraphChange()){status(L"输入尺寸切换呈现排空失败",true);break;}
