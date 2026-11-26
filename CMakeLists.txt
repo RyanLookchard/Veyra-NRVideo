@@ -170,6 +170,7 @@ add_library(veyra_gfx STATIC
   src/gfx/RifeDmlBackend.cpp
   src/gfx/AmfVideoSrBackend.cpp
   src/gfx/FsrSrBackend.cpp
+  src/gfx/Fsr4SrBackend.cpp
   src/gfx/XessSrBackend.cpp
 )
 veyra_apply_warnings(veyra_gfx)
@@ -1073,6 +1074,11 @@ include_directories(${FFMPEG_INCLUDE_DIRS})
     target_compile_options(veyra_fsr_upscale_probe PRIVATE /utf-8 /WX-)
     target_compile_definitions(veyra_fsr_upscale_probe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
     target_link_libraries(veyra_fsr_upscale_probe PRIVATE d3d12 dxgi dxguid)
+    add_executable(veyra_fsr4_driver_probe tools/fsr4_driver_probe/main.cpp)
+    target_compile_features(veyra_fsr4_driver_probe PRIVATE cxx_std_20)
+    target_compile_options(veyra_fsr4_driver_probe PRIVATE /utf-8 /WX-)
+    target_compile_definitions(veyra_fsr4_driver_probe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+    target_link_libraries(veyra_fsr4_driver_probe PRIVATE d3d12 dxgi dxguid)
   endif()
   add_executable(veyra_capture_color_tests tests/unit/CaptureColorContractTests.cpp)
   add_executable(veyra_capture_format_selection_tests tests/unit/CaptureFormatSelectionTests.cpp)

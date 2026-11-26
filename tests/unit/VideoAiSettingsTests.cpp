@@ -48,7 +48,7 @@ int wmain(int argc,wchar_t** argv){
     for(uint32_t q=0;q<40;++q){
         const bool rtx=(q>=1&&q<=4)||(q>=16&&q<=19)||q==21||q==23;
         check(rtxVideoSr(q)==rtx,"RTX Video SR family values");
-        check(validVideoSrQuality(q)==(rtx||q==0||q==kVideoSrFsr||q==24||q==25||q==26),"stored SR quality table");
+        check(validVideoSrQuality(q)==(rtx||q==0||q==kVideoSrFsr||q==kVideoSrXess||q==kVideoSrFsr4||q==24||q==25||q==26),"stored SR quality table");
         EnhancementSettings s;s.sr=true;s.videoSrQuality=q;
         check(s.validate().empty()==validVideoSrQuality(q),"validation accepts exactly the stored SR qualities");
         check(ngxVideoSr(q)==(q>=1&&q<=4)&&vfxVideoSr(q)==(rtx&&q>4),"standard runs on NGX, the others on Video Effects");
@@ -81,6 +81,14 @@ int wmain(int argc,wchar_t** argv){
         s.videoSrQuality=kVideoSrAmf10;
         s.dualSrQuality=kVideoSrNis;s.dualSrEnabled=true;s.srPrescale=SrPrescale::P1080;
         check(dualSrRuns(s,false,false,true)&&!dualSrRuns(s,true),"mixed AMD VideoSR/NIS double SR needs the AMD adapter");
+        // FSR4 (q7): temporal like FSR/XeSS, accepted on any adapter at the
+        // settings layer (the backend's Intel gate + runtime presence decide),
+        // and excluded from still-image double SR like the other temporal ML passes.
+        check(temporalVideoSr(kVideoSrFsr4),"FSR4 reads temporal guidance");
+        check(videoSrRunsOn(kVideoSrFsr4,false,false),"FSR4 settings load on any adapter; backend gates Intel");
+        s.videoSrQuality=kVideoSrFsr4;s.dualSrQuality=kVideoSrFsr;s.dualSrEnabled=true;
+        check(dualSrRuns(s,false,false,false),"FSR4 double SR runs on non-NVIDIA adapters");
+        check(!dualSrRuns(s,false,true,false),"FSR4 double SR skips still images");
     }
     // Family + tier <-> stored value.
     for(uint32_t tier=1;tier<=4;++tier){
@@ -102,8 +110,8 @@ int wmain(int argc,wchar_t** argv){
         check(s.validate().empty(),"high bitrate base with a streaming second pass");
         auto active=s.activeVideoSettings();
         check(active.dualSrEnabled&&active.dualSrQuality==23&&active.srPrescale==SrPrescale::P1080,"double SR stays active on high bitrate");
-        for(uint32_t bad2:{6u,15u,20u,22u,27u}){auto bad=s;bad.dualSrQuality=bad2;check(!bad.validate().empty(),"second SR must be a stored SR value");}
-        for(uint32_t good2:{0u,kVideoSrFsr,kVideoSrNis,kVideoSrAmf10,kVideoSrAmf11}){auto good=s;good.dualSrQuality=good2;check(good.validate().empty(),"DLSS, FSR, NIS and AMD VideoSR are valid second passes");}
+        for(uint32_t bad2:{8u,15u,20u,22u,27u}){auto bad=s;bad.dualSrQuality=bad2;check(!bad.validate().empty(),"second SR must be a stored SR value");}
+        for(uint32_t good2:{0u,kVideoSrFsr,kVideoSrXess,kVideoSrFsr4,kVideoSrNis,kVideoSrAmf10,kVideoSrAmf11}){auto good=s;good.dualSrQuality=good2;check(good.validate().empty(),"DLSS, FSR, XeSS, FSR4, NIS and AMD VideoSR are valid second passes");}
         s.videoSrQuality=4;s.dualSrQuality=17;check(s.validate().empty()&&s.activeVideoSettings().dualSrEnabled,"standard base with a high bitrate second pass");
         s.videoSrQuality=0;check(s.activeVideoSettings().dualSrEnabled,"a DLSS SR base runs double SR");
         s.videoSrQuality=kVideoSrFsr;check(s.activeVideoSettings().dualSrEnabled,"an FSR base runs double SR");

@@ -59,6 +59,7 @@ class D3D12DeviceContext;
 class CommandSlotRing;
 class FsrSrBackend;
 class XessSrBackend;
+class Fsr4SrBackend;
 class AmfVideoSrBackend;
 class FsrFgPresenter;
 class AmfFrcBackend;
@@ -821,6 +822,11 @@ public:
     bool xessSrRequested() const { return desc_.enableSr && !desc_.stillImage &&
         (desc_.finalSrQuality()==engine::kVideoSrXess || desc_.firstSrRuns(engine::kVideoSrXess)); }
     bool xessSrEnabled() const;
+    // AMD FSR4 ML upscaling via the driver DLL: Intel Arc only, user-supplied
+    // runtime; temporal, same harness as FSR/XeSS.
+    bool fsr4SrRequested() const { return desc_.enableSr && !desc_.stillImage &&
+        (desc_.finalSrQuality()==engine::kVideoSrFsr4 || desc_.firstSrRuns(engine::kVideoSrFsr4)); }
+    bool fsr4SrEnabled() const;
     // Requested output multiplier (2 = one generated frame). Consumed by the
     // present sink so the XeSS provider knows how many frames to generate.
     uint32_t fgMultiplier() const { return desc_.fgMultiplier; }
@@ -1246,6 +1252,9 @@ private:
     std::unique_ptr<gfx::XessSrBackend> xessSrBackend_;
     std::unique_ptr<gfx::XessSrBackend> firstXessSrBackend_;
     bool initXessSr();
+    std::unique_ptr<gfx::Fsr4SrBackend> fsr4SrBackend_;
+    std::unique_ptr<gfx::Fsr4SrBackend> firstFsr4SrBackend_;
+    bool initFsr4Sr();
     // Index 0 is the optional first pass, index 1 is the final or only pass.
     std::array<std::unique_ptr<NisScaler>, 2> nisSr_;
     std::array<std::unique_ptr<gfx::AmfVideoSrBackend>, 2> amfSr_;

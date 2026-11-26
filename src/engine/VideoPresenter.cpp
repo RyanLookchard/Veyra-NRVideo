@@ -58,7 +58,7 @@ bool createPresentationPasses(gfx::D3D12DeviceContext& ctx,pipeline::EnhanceGrap
 bool VideoPresenter::prepareOpening(gfx::D3D12DeviceContext& ctx,pipeline::EnhanceGraph& graph,PreparedOpening& opening){
     if(graph.xessEnabled()){
         opening.xess=std::make_unique<gfx::XessPresenter>();
-        if(!opening.xess->prepare(ctx.device(),graph.fgMultiplier(),xessLowLatencySleep(),true))return false;
+        if(!opening.xess->prepare(ctx.device(),graph.fgMultiplier(),xessLowLatencySleep(),true,ctx.adapter().vendorId))return false;
     }
     return createPresentationPasses(ctx,graph,opening,graph.xessEnabled());
 }
