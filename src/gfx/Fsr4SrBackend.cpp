@@ -296,13 +296,26 @@ bool Fsr4SrBackend::initialize(ID3D12Device* device, uint32_t maxRenderWidth, ui
     // The UI hides it elsewhere, but the backend must refuse on its own so
     // no other vendor's build can ever enter the hook path.
     {
-        ComPtr<IDXGIDevice> dxgiDevice;
-        ComPtr<IDXGIAdapter> adapter;
-        DXGI_ADAPTER_DESC desc{};
-        if (FAILED(device->QueryInterface(IID_PPV_ARGS(&dxgiDevice))) ||
-            FAILED(dxgiDevice->GetAdapter(&adapter)) || FAILED(adapter->GetDesc(&desc)) ||
-            desc.VendorId != 0x8086) {
-            log::warn("fsr4-sr", std::format("non-Intel adapter vendor=0x{:04X}; refusing", desc.VendorId));
+        // D3D12 device -> IDXGIDevice QI is unreliable on some drivers (Arc
+        // B390 field log 2026-11-26: the whole chain failed and the gate saw
+        // vendor 0). Resolve the adapter by the device's own LUID instead.
+        const LUID luid = device->GetAdapterLuid();
+        ComPtr<IDXGIFactory4> factory;
+        ComPtr<IDXGIAdapter1> adapter;
+        DXGI_ADAPTER_DESC1 desc{};
+        UINT vendor = 0;
+        const HRESULT factoryHr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+        HRESULT enumHr = E_FAIL, descHr = E_FAIL;
+        if (SUCCEEDED(factoryHr)) {
+            enumHr = factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&adapter));
+            if (SUCCEEDED(enumHr)) {
+                descHr = adapter->GetDesc1(&desc);
+                if (SUCCEEDED(descHr)) vendor = desc.VendorId;
+            }
+        }
+        if (vendor != 0x8086) {
+            log::warn("fsr4-sr", std::format("non-Intel adapter vendor=0x{:04X}; refusing (factoryHr=0x{:X} enumHr=0x{:X} descHr=0x{:X})",
+                                             vendor, unsigned(factoryHr), unsigned(enumHr), unsigned(descHr)));
             return false;
         }
     }
